@@ -40,5 +40,8 @@
     "doctor": "npx --yes expo-doctor",
     "lint": "expo lint"
   },
-  "private": true
+  "private": true,
+  "overrides": {
+    "react-native-worklets": "0.13.0"
+  }
 }
