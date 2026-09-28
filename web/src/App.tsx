@@ -1,5 +1,6 @@
 import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { AdminPage } from './pages/admin';
 import { HistoryPage } from './pages/history';
 import { HomePage } from './pages/home';
 import { InvitePage } from './pages/invite';
@@ -123,6 +124,15 @@ function Shell() {
             element={
               <RequireAuth>
                 <NewKeshtPage />
+              </RequireAuth>
+            }
+          />
+          {/* Hidden admin screen: gated by the database, not by hiding the link. */}
+          <Route
+            path="/admin"
+            element={
+              <RequireAuth>
+                <AdminPage />
               </RequireAuth>
             }
           />

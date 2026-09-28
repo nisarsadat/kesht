@@ -510,3 +510,162 @@ grant execute on function public.claim_pending_invites() to authenticated;
 
 revoke all on function public.redeem_invite(text) from public, anon;
 grant execute on function public.redeem_invite(text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Super admin
+--
+-- One account is trusted to see and clean up everything. The first account
+-- created after this file runs becomes the admin automatically (guarded by a
+-- transaction lock, so two simultaneous sign-ups cannot both claim it), and
+-- accounts that existed before this section can be made admin by hand:
+--
+--   insert into public.app_admins (user_id)
+--   select id from auth.users where email = 'you@example.com'
+--   on conflict do nothing;
+--
+-- Everything is enforced here on the server. The hidden /admin page is a
+-- convenience, not the gate: the database refuses non-admins directly.
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.app_admins (
+  user_id    uuid primary key references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.is_app_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from app_admins a where a.user_id = auth.uid()
+  );
+$$;
+
+-- The first user ever to sign up becomes the admin. The advisory lock makes
+-- "is the table still empty?" and the insert one atomic step, so a race
+-- between two first sign-ups picks exactly one of them.
+create or replace function public.grant_first_admin()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform pg_advisory_xact_lock(hashtext('kesht_first_admin'));
+  if not exists (select 1 from app_admins) then
+    insert into app_admins (user_id) values (new.id) on conflict do nothing;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists grant_first_admin on auth.users;
+create trigger grant_first_admin
+  after insert on auth.users
+  for each row execute function public.grant_first_admin();
+
+alter table public.app_admins enable row level security;
+
+drop policy if exists app_admins_select on public.app_admins;
+create policy app_admins_select on public.app_admins
+  for select to authenticated
+  using (user_id = auth.uid() or public.is_app_admin());
+
+drop policy if exists app_admins_insert on public.app_admins;
+create policy app_admins_insert on public.app_admins
+  for insert to authenticated
+  with check (public.is_app_admin());
+
+drop policy if exists app_admins_delete on public.app_admins;
+create policy app_admins_delete on public.app_admins
+  for delete to authenticated
+  using (public.is_app_admin());
+
+-- Admin reads go through these RPCs, so a plain user gets a clear refusal
+-- instead of silent empty lists.
+create or replace function public.admin_list_users()
+returns table (user_id uuid, email text, created_at timestamptz)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_app_admin() then
+    raise exception 'not_admin' using errcode = '42501';
+  end if;
+  return query
+    select u.id, u.email, u.created_at
+      from auth.users u
+     order by u.created_at asc;
+end;
+$$;
+
+create or replace function public.admin_list_keshts()
+returns table (
+  kesht_id     text,
+  name         text,
+  status       text,
+  owner_email  text,
+  member_count integer,
+  round_count  integer,
+  created_at   timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_app_admin() then
+    raise exception 'not_admin' using errcode = '42501';
+  end if;
+  return query
+    select k.id,
+           k.name,
+           k.status,
+           ou.email,
+           (select count(*)::int from members m where m.kesht_id = k.id),
+           (select count(*)::int from rounds r where r.kesht_id = k.id),
+           k.created_at
+      from keshts k
+      left join kesht_members om on om.kesht_id = k.id and om.role = 'owner'
+      left join auth.users ou on ou.id = om.user_id
+     order by k.created_at asc;
+end;
+$$;
+
+-- Deleting the kesht row takes its members, rounds, payments, memberships and
+-- invite links with it (every child table references it on delete cascade).
+create or replace function public.admin_delete_kesht(p_kesht_id text)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_app_admin() then
+    raise exception 'not_admin' using errcode = '42501';
+  end if;
+  delete from keshts where id = p_kesht_id;
+  if not found then
+    raise exception 'kesht_not_found' using errcode = 'P0002';
+  end if;
+end;
+$$;
+
+revoke all on public.app_admins from anon, public;
+grant select, insert, delete on public.app_admins to authenticated;
+
+revoke all on function public.admin_list_users() from public, anon;
+grant execute on function public.admin_list_users() to authenticated;
+
+revoke all on function public.admin_list_keshts() from public, anon;
+grant execute on function public.admin_list_keshts() to authenticated;
+
+revoke all on function public.admin_delete_kesht(text) from public, anon;
+grant execute on function public.admin_delete_kesht(text) to authenticated;

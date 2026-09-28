@@ -73,7 +73,8 @@ await db.exec(`
   create schema auth;
   create table auth.users (
     id uuid primary key,
-    email text unique
+    email text unique,
+    created_at timestamptz not null default now()
   );
   create or replace function auth.jwt() returns jsonb
     language sql stable as $$
@@ -106,10 +107,10 @@ const rlsOn = await db.query(`
   select c.relname as name, c.relrowsecurity as enabled
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public' and c.relkind = 'r'
-     and c.relname in ('keshts','members','rounds','payments','kesht_members','kesht_invites')
+     and c.relname in ('keshts','members','rounds','payments','kesht_members','kesht_invites','app_admins')
    order by c.relname
 `);
-check('all six tables have row level security enabled', rlsOn.rows.map((r) => r.enabled), [true, true, true, true, true, true]);
+check('all seven tables have row level security enabled', rlsOn.rows.map((r) => r.enabled), [true, true, true, true, true, true, true]);
 
 const policyCount = await db.query(`
   select count(*)::int as n from pg_policies where schemaname = 'public'
@@ -288,6 +289,78 @@ await asExpectFailure(
   'a viewer cannot create share links',
   `insert into kesht_invites (kesht_id, token, created_by) values ('kesht-1', 'tok-bad', '${VIEWER.sub}')`,
 );
+
+// ---------------------------------------------------------------------------
+// Super admin: first sign-up becomes admin, everyone else is refused
+// ---------------------------------------------------------------------------
+
+console.log('\nSuper admin');
+
+// The three seeded users were inserted before the migration ran, so the
+// first-admin trigger has not fired for anyone yet.
+const preAdmins = await db.query('select count(*)::int as n from app_admins');
+check('no admin exists before any new sign-up', preAdmins.rows[0].n, 0);
+
+const ADMIN = { sub: '44444444-4444-4444-8444-444444444444', email: 'admin@example.com' };
+const LATE = { sub: '55555555-5555-5555-8555-555555555555', email: 'late@example.com' };
+await db.query('insert into auth.users (id, email) values ($1, $2), ($3, $4)', [ADMIN.sub, ADMIN.email, LATE.sub, LATE.email]);
+
+const adminRows = await db.query('select user_id from app_admins');
+check('the first new sign-up became the admin, the second did not', adminRows.rows.map((r) => r.user_id), [ADMIN.sub]);
+
+const strangerAdminRows = await as(db, STRANGER, 'select user_id from app_admins');
+check('a non-admin sees no admin rows', strangerAdminRows.rows.length, 0);
+
+await asExpectFailure(db, VIEWER, 'a non-admin cannot make themselves admin', `insert into app_admins (user_id) values ('${VIEWER.sub}')`);
+await asExpectFailure(db, STRANGER, 'a stranger cannot list users', 'select * from admin_list_users()');
+await asExpectFailure(db, STRANGER, 'a stranger cannot list keshts', 'select * from admin_list_keshts()');
+await asExpectFailure(db, STRANGER, 'a stranger cannot delete a kesht', `select admin_delete_kesht('kesht-1')`);
+await asExpectFailure(db, VIEWER, 'a viewer cannot list users either', 'select * from admin_list_users()');
+
+checks += 1;
+await db.exec('set role anon');
+try {
+  await db.query('select user_id from app_admins');
+  failures.push('anon can read app_admins — expected the database to refuse this');
+  console.log('  FAIL the anon role can read app_admins');
+} catch {
+  console.log('  ok   the anon role has no access to app_admins');
+} finally {
+  await db.exec('reset role');
+}
+
+const userList = await as(db, ADMIN, 'select * from admin_list_users()');
+check(
+  'admin_list_users shows every account',
+  { count: userList.rows.length, hasOwner: userList.rows.some((r) => r.email === OWNER.email) },
+  { count: 5, hasOwner: true },
+);
+
+const keshtList = await as(db, ADMIN, 'select * from admin_list_keshts()');
+check(
+  'admin_list_keshts shows the kesht with its owner and counts',
+  keshtList.rows.map((r) => ({ kesht_id: r.kesht_id, owner_email: r.owner_email, member_count: r.member_count, round_count: r.round_count })),
+  [{ kesht_id: 'kesht-1', owner_email: OWNER.email, member_count: 2, round_count: 1 }],
+);
+
+await as(db, ADMIN, `select admin_delete_kesht('kesht-1')`);
+console.log('  ok   admin_delete_kesht removed another user\'s kesht');
+
+const orphanCounts = await db.query(`
+  select (select count(*)::int from keshts) as keshts,
+         (select count(*)::int from members) as members,
+         (select count(*)::int from rounds) as rounds,
+         (select count(*)::int from payments) as payments,
+         (select count(*)::int from kesht_members) as memberships,
+         (select count(*)::int from kesht_invites) as invites
+`);
+check(
+  'the delete cascaded to every child table',
+  orphanCounts.rows[0],
+  { keshts: 0, members: 0, rounds: 0, payments: 0, memberships: 0, invites: 0 },
+);
+
+await asExpectFailure(db, ADMIN, 'deleting the same kesht again fails cleanly', `select admin_delete_kesht('kesht-1')`);
 
 // ---------------------------------------------------------------------------
 console.log(`\n${checks - failures.length}/${checks} checks passed`);

@@ -174,6 +174,18 @@ const fa = {
   sharedBadge: 'همرسانی شده',
   shareCloudOnly: 'همرسانی فقط وقتی کار می‌کند که برنامه به پایگاه داده وصل باشد.',
 
+  // سرپرست کل
+  adminTitle: 'سرپرست کل',
+  adminUsers: 'حساب‌ها',
+  adminKeshts: 'همه کشت‌ها',
+  adminEmptyUsers: 'هنوز حسابی نیست.',
+  adminEmptyKeshts: 'هنوز کشتی نیست.',
+  adminForbidden: 'این بخش فقط برای سرپرست کل است.',
+  adminRefresh: 'بارگیری دوباره',
+  adminDeleteTitle: 'حذف کشت',
+  adminDeleteBody: 'کشت «{name}» با همه اعضا، ماه‌ها و پرداخت‌هایش حذف شود؟ این کار برگشت ندارد.',
+  notifyAdminKeshtDeleted: 'کشت حذف شد.',
+
   // پیوستن از پیوند
   joiningInvite: 'در حال پیوستن…',
   inviteInvalid: 'این پیوند معتبر نیست یا باطل شده است.',
@@ -393,6 +405,18 @@ const en: Record<keyof typeof fa, string> = {
   readOnly: 'This kesht was shared with you. You can look, but not change it.',
   sharedBadge: 'Shared',
   shareCloudOnly: 'Sharing only works when the app is connected to the database.',
+
+  // Super admin
+  adminTitle: 'Super admin',
+  adminUsers: 'Accounts',
+  adminKeshts: 'All keshts',
+  adminEmptyUsers: 'No accounts yet.',
+  adminEmptyKeshts: 'No keshts yet.',
+  adminForbidden: 'This area is only for the super admin.',
+  adminRefresh: 'Reload',
+  adminDeleteTitle: 'Delete kesht',
+  adminDeleteBody: 'Delete “{name}” with all of its members, months and payments? This cannot be undone.',
+  notifyAdminKeshtDeleted: 'Kesht deleted.',
 
   // Joining from a link
   joiningInvite: 'Joining…',

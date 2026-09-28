@@ -11,6 +11,7 @@ export function HomePage() {
     language,
     mode,
     email,
+    isAdmin,
     signOut,
     roleOf,
     hasLocalData,
@@ -88,6 +89,7 @@ export function HomePage() {
           <span className="muted">
             {t('signedInAs')}: {email ?? t('none')}
           </span>
+          {isAdmin ? <Button to="/admin" label={t('adminTitle')} tone="ghost" small /> : null}
           <Button label={t('signOut')} tone="ghost" small onClick={() => void signOut()} />
         </Card>
       ) : null}

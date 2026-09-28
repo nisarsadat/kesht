@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
+import { fetchIsAdmin } from '../data/admin';
 import { store, type Mode, type Role } from '../data/store';
 import { isCloudConfigured, supabase } from '../data/supabase';
 import type { Bundle, KeshtSummary, Language, RuleCode } from '../domain/types';
@@ -15,6 +16,8 @@ type AppState = {
   session: Session | null;
   authReady: boolean;
   email: string | null;
+  /** True when the signed-in account is the super admin (a row in app_admins). */
+  isAdmin: boolean;
   loadingData: boolean;
   language: Language;
   direction: 'rtl' | 'ltr';
@@ -74,6 +77,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const revision = useSyncExternalStore(store.subscribe, store.getRevision, store.getRevision);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const attached = useRef<string | null>(null);
 
   const language = store.getLanguage();
@@ -109,6 +113,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     attached.current = userId;
     if (userId) void store.attach(userId);
     else store.detach();
+    // Resolved once per identity change; signing out clears it immediately.
+    let active = true;
+    if (!userId) {
+      setIsAdmin(false);
+      return;
+    }
+    void fetchIsAdmin()
+      .then((admin) => {
+        if (active) setIsAdmin(admin);
+      })
+      .catch(() => {
+        if (active) setIsAdmin(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [session]);
 
   // Kept separate from the value below so their identity only changes when the
@@ -191,6 +211,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       session,
       authReady,
       email: session?.user.email ?? null,
+      isAdmin,
       loadingData: !store.isLoaded(),
       language,
       direction: language === 'fa' ? 'rtl' : 'ltr',
@@ -201,7 +222,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       hasLocalData: store.hasLocalData(),
       localDataCount: store.localDataCount(),
     };
-  }, [helpers, actions, theme, revision, session, authReady]);
+  }, [helpers, actions, theme, revision, session, authReady, isAdmin]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
