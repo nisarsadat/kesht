@@ -156,7 +156,12 @@ const fa = {
   invite: 'افزودن',
   peopleWithAccess: 'کسانی که دسترسی دارند',
   roleOwner: 'مالک',
-  roleViewer: 'بیننده',
+  roleManager: 'مدیر',
+  roleMember: 'عضو (فقط دیدن)',
+  makeManager: 'مدیر کن',
+  makeMember: 'عضو کن',
+  inviteAs: 'دسترسی',
+  memberReadOnlyHint: 'عضو فقط می‌بیند؛ مدیر می‌تواند کشت، اعضا و پرداخت‌ها را تغییر دهد.',
   pendingInvite: 'در انتظار',
   joined: 'پیوسته',
   you: 'شما',
@@ -174,17 +179,6 @@ const fa = {
   sharedBadge: 'همرسانی شده',
   shareCloudOnly: 'همرسانی فقط وقتی کار می‌کند که برنامه به پایگاه داده وصل باشد.',
 
-  // سرپرست کل
-  adminTitle: 'سرپرست کل',
-  adminUsers: 'حساب‌ها',
-  adminKeshts: 'همه کشت‌ها',
-  adminEmptyUsers: 'هنوز حسابی نیست.',
-  adminEmptyKeshts: 'هنوز کشتی نیست.',
-  adminForbidden: 'این بخش فقط برای سرپرست کل است.',
-  adminRefresh: 'بارگیری دوباره',
-  adminDeleteTitle: 'حذف کشت',
-  adminDeleteBody: 'کشت «{name}» با همه اعضا، ماه‌ها و پرداخت‌هایش حذف شود؟ این کار برگشت ندارد.',
-  notifyAdminKeshtDeleted: 'کشت حذف شد.',
 
   // پیوستن از پیوند
   joiningInvite: 'در حال پیوستن…',
@@ -229,6 +223,7 @@ const fa = {
   notifyLinkCreated: 'پیوند ساخته شد.',
   notifyLinkRevoked: 'پیوند باطل شد.',
   notifyAccessRemoved: 'دسترسی برداشته شد.',
+  notifyRoleChanged: 'دسترسی تغییر کرد.',
   notifySignedIn: 'خوش آمدید.',
 } as const;
 
@@ -388,7 +383,12 @@ const en: Record<keyof typeof fa, string> = {
   invite: 'Add',
   peopleWithAccess: 'People with access',
   roleOwner: 'Owner',
-  roleViewer: 'Viewer',
+  roleManager: 'Manager',
+  roleMember: 'Member (view only)',
+  makeManager: 'Make manager',
+  makeMember: 'Make member',
+  inviteAs: 'Access',
+  memberReadOnlyHint: 'A member can only look; a manager can change the kesht, its people and payments.',
   pendingInvite: 'Pending',
   joined: 'Joined',
   you: 'you',
@@ -406,17 +406,6 @@ const en: Record<keyof typeof fa, string> = {
   sharedBadge: 'Shared',
   shareCloudOnly: 'Sharing only works when the app is connected to the database.',
 
-  // Super admin
-  adminTitle: 'Super admin',
-  adminUsers: 'Accounts',
-  adminKeshts: 'All keshts',
-  adminEmptyUsers: 'No accounts yet.',
-  adminEmptyKeshts: 'No keshts yet.',
-  adminForbidden: 'This area is only for the super admin.',
-  adminRefresh: 'Reload',
-  adminDeleteTitle: 'Delete kesht',
-  adminDeleteBody: 'Delete “{name}” with all of its members, months and payments? This cannot be undone.',
-  notifyAdminKeshtDeleted: 'Kesht deleted.',
 
   // Joining from a link
   joiningInvite: 'Joining…',
@@ -461,6 +450,7 @@ const en: Record<keyof typeof fa, string> = {
   notifyLinkCreated: 'Link created.',
   notifyLinkRevoked: 'Link revoked.',
   notifyAccessRemoved: 'Access removed.',
+  notifyRoleChanged: 'Access updated.',
   notifySignedIn: 'Welcome back.',
 };
 

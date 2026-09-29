@@ -41,7 +41,12 @@ const PREFS_KEY = 'kesht.prefs.v1';
 const IMPORTED_KEY = 'kesht.imported.v1';
 
 export type Mode = 'cloud' | 'local';
-export type Role = 'owner' | 'viewer';
+/**
+ * What a signed-in account may do inside one kesht: the owner manages access
+ * and everything else, a manager runs the kesht day to day, a member only
+ * looks. The database enforces the same three roles (see supabase/).
+ */
+export type Role = 'owner' | 'manager' | 'member';
 
 type Prefs = { language: Language; theme: ThemeName };
 
@@ -214,6 +219,12 @@ export class KeshtStore {
 
   /** The local-only build has no accounts, so everything is editable there. */
   canEdit(keshtId: string): boolean {
+    const role = this.roles[keshtId];
+    return this.mode === 'local' || role === 'owner' || role === 'manager';
+  }
+
+  /** Only the owner decides who has access to a kesht. */
+  canManage(keshtId: string): boolean {
     return this.mode === 'local' || this.roles[keshtId] === 'owner';
   }
 
@@ -278,7 +289,7 @@ export class KeshtStore {
     );
     const roles: Record<string, Role> = {};
     for (const row of (memberships.data ?? []) as { kesht_id: string; role: string }[]) {
-      roles[row.kesht_id] = row.role === 'owner' ? 'owner' : 'viewer';
+      roles[row.kesht_id] = row.role === 'owner' ? 'owner' : row.role === 'manager' ? 'manager' : 'member';
     }
     this.roles = roles;
 

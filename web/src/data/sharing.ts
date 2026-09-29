@@ -6,10 +6,13 @@ import { supabase } from './supabase';
  * belong in the bundle store.
  */
 
+/** What somebody may do inside a kesht. */
+export type AccessRole = 'owner' | 'manager' | 'member';
+
 export type Collaborator = {
   id: string;
   userId: string | null;
-  role: 'owner' | 'viewer';
+  role: AccessRole;
   /** Pending invites have no userId yet; joined people keep the invited address. */
   email: string | null;
   createdAt: string;
@@ -25,10 +28,15 @@ export type InviteLink = {
 type MemberRow = {
   id: string;
   user_id: string | null;
-  role: 'owner' | 'viewer';
+  role: string;
   invited_email: string | null;
   created_at: string;
 };
+
+/** The database stores the role as text; anything unexpected is a member. */
+function accessRole(role: string): AccessRole {
+  return role === 'owner' ? 'owner' : role === 'manager' ? 'manager' : 'member';
+}
 
 type InviteRow = {
   id: string;
@@ -57,19 +65,28 @@ export async function listCollaborators(keshtId: string): Promise<Collaborator[]
   return ((data ?? []) as MemberRow[]).map((row) => ({
     id: row.id,
     userId: row.user_id,
-    role: row.role,
+    role: accessRole(row.role),
     email: row.invited_email,
     createdAt: row.created_at,
   }));
 }
 
-/** Adds a pending invite that becomes real access when that address signs up. */
-export async function inviteByEmail(keshtId: string, email: string): Promise<void> {
+/**
+ * Adds a pending invite that becomes real access when that address signs up.
+ * A manager may change everything in the kesht; a member can only look.
+ */
+export async function inviteByEmail(keshtId: string, email: string, role: AccessRole = 'member'): Promise<void> {
   const trimmed = email.trim().toLowerCase();
   if (!trimmed.includes('@')) throw new Error('email_invalid');
   const { error } = await client()
     .from('kesht_members')
-    .insert({ kesht_id: keshtId, user_id: null, role: 'viewer', invited_email: trimmed });
+    .insert({ kesht_id: keshtId, user_id: null, role, invited_email: trimmed });
+  if (error) throw new Error(error.message);
+}
+
+/** Promotes a collaborator to manager, or drops them back to a member. */
+export async function setCollaboratorRole(membershipId: string, role: Exclude<AccessRole, 'owner'>): Promise<void> {
+  const { error } = await client().from('kesht_members').update({ role }).eq('id', membershipId);
   if (error) throw new Error(error.message);
 }
 

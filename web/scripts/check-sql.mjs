@@ -20,7 +20,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const migration = readFileSync(join(here, '..', 'supabase', '0001_init.sql'), 'utf8');
 
 const OWNER = { sub: '11111111-1111-4111-8111-111111111111', email: 'owner@example.com' };
-const VIEWER = { sub: '22222222-2222-4222-8222-222222222222', email: 'viewer@example.com' };
+const MEMBER = { sub: '22222222-2222-4222-8222-222222222222', email: 'member@example.com' };
+const MANAGER = { sub: '44444444-4444-4444-8444-444444444444', email: 'manager@example.com' };
 const STRANGER = { sub: '33333333-3333-4333-8333-333333333333', email: 'stranger@example.com' };
 
 const failures = [];
@@ -89,7 +90,8 @@ await db.exec(`
 
   insert into auth.users (id, email) values
     ('${OWNER.sub}', '${OWNER.email}'),
-    ('${VIEWER.sub}', '${VIEWER.email}'),
+    ('${MEMBER.sub}', '${MEMBER.email}'),
+    ('${MANAGER.sub}', '${MANAGER.email}'),
     ('${STRANGER.sub}', '${STRANGER.email}');
 `);
 
@@ -107,10 +109,10 @@ const rlsOn = await db.query(`
   select c.relname as name, c.relrowsecurity as enabled
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public' and c.relkind = 'r'
-     and c.relname in ('keshts','members','rounds','payments','kesht_members','kesht_invites','app_admins')
+     and c.relname in ('keshts','members','rounds','payments','kesht_members','kesht_invites')
    order by c.relname
 `);
-check('all seven tables have row level security enabled', rlsOn.rows.map((r) => r.enabled), [true, true, true, true, true, true, true]);
+check('all six tables have row level security enabled', rlsOn.rows.map((r) => r.enabled), [true, true, true, true, true, true]);
 
 const policyCount = await db.query(`
   select count(*)::int as n from pg_policies where schemaname = 'public'
@@ -189,47 +191,47 @@ console.log('\nSharing by email');
 
 await as(db, OWNER, 'insert into kesht_members (kesht_id, role, invited_email) values ($1, $2, $3)', [
   keshtId,
-  'viewer',
-  VIEWER.email,
+  'member',
+  MEMBER.email,
 ]);
 
-const viewerBeforeClaim = await as(db, VIEWER, 'select id from keshts');
-check('a pending invite gives no access yet', viewerBeforeClaim.rows.length, 0);
+const memberBeforeClaim = await as(db, MEMBER, 'select id from keshts');
+check('a pending invite gives no access yet', memberBeforeClaim.rows.length, 0);
 
-const claimed = await as(db, VIEWER, 'select claim_pending_invites() as n');
+const claimed = await as(db, MEMBER, 'select claim_pending_invites() as n');
 check('claim_pending_invites turns it into access', claimed.rows[0].n, 1);
 
-const viewerAfterClaim = await as(db, VIEWER, 'select id from keshts');
-check('the viewer can now read the kesht', viewerAfterClaim.rows.length, 1);
+const memberAfterClaim = await as(db, MEMBER, 'select id from keshts');
+check('the member can now read the kesht', memberAfterClaim.rows.length, 1);
 
-const viewerCanReadChildren = await as(db, VIEWER, `
+const memberCanReadChildren = await as(db, MEMBER, `
   select (select count(*)::int from members) as members,
          (select count(*)::int from rounds) as rounds,
          (select count(*)::int from payments) as payments
 `);
-check('the viewer can read members, rounds and payments', viewerCanReadChildren.rows[0], { members: 2, rounds: 1, payments: 2 });
+check('the member can read members, rounds and payments', memberCanReadChildren.rows[0], { members: 2, rounds: 1, payments: 2 });
 
 // ---------------------------------------------------------------------------
-// The important part: a viewer is genuinely read-only
+// The important part: a member is genuinely read-only
 // ---------------------------------------------------------------------------
 
-console.log('\nA shared viewer is read-only');
+console.log('\nA shared member is read-only');
 
-const renamed = await as(db, VIEWER, `update keshts set name = 'hacked' where id = 'kesht-1' returning id`);
+const renamed = await as(db, MEMBER, `update keshts set name = 'hacked' where id = 'kesht-1' returning id`);
 check('cannot rename the kesht (0 rows touched)', renamed.rows.length, 0);
 
-const deleted = await as(db, VIEWER, `delete from keshts where id = 'kesht-1' returning id`);
+const deleted = await as(db, MEMBER, `delete from keshts where id = 'kesht-1' returning id`);
 check('cannot delete the kesht (0 rows touched)', deleted.rows.length, 0);
 
-const paid = await as(db, VIEWER, `update payments set paid = true where id = 'p2' returning id`);
+const paid = await as(db, MEMBER, `update payments set paid = true where id = 'p2' returning id`);
 check('cannot mark a payment as paid', paid.rows.length, 0);
 
-const removedMember = await as(db, VIEWER, `delete from members where id = 'm2' returning id`);
+const removedMember = await as(db, MEMBER, `delete from members where id = 'm2' returning id`);
 check('cannot remove a member', removedMember.rows.length, 0);
 
-await asExpectFailure(db, VIEWER, 'cannot add a member', `insert into members (id, kesht_id, name, turn_order) values ('m3', 'kesht-1', 'Sneaky', 3)`);
+await asExpectFailure(db, MEMBER, 'cannot add a member', `insert into members (id, kesht_id, name, turn_order) values ('m3', 'kesht-1', 'Sneaky', 3)`);
 
-await asExpectFailure(db, VIEWER, 'cannot push changes through save_kesht_bundle', 'select save_kesht_bundle($1, $2, $3, $4)', [
+await asExpectFailure(db, MEMBER, 'cannot push changes through save_kesht_bundle', 'select save_kesht_bundle($1, $2, $3, $4)', [
   JSON.stringify({ ...saveArgs.p_kesht, name: 'rewritten' }),
   JSON.stringify(saveArgs.p_members),
   JSON.stringify(saveArgs.p_rounds),
@@ -272,7 +274,7 @@ const strangerNow = await as(db, STRANGER, 'select id from keshts');
 check('…and gives them read access', strangerNow.rows.length, 1);
 
 const strangerRole = await as(db, STRANGER, `select role from kesht_members where user_id = $1`, [STRANGER.sub]);
-check('…as a viewer, not an owner', strangerRole.rows.map((r) => r.role), ['viewer']);
+check('…as a member, not an owner', strangerRole.rows.map((r) => r.role), ['member']);
 
 const strangerWrite = await as(db, STRANGER, `update keshts set name = 'hacked' where id = 'kesht-1' returning id`);
 check('…still read-only', strangerWrite.rows.length, 0);
@@ -282,85 +284,64 @@ await asExpectFailure(db, STRANGER, 'an unknown token is refused', `select redee
 await as(db, OWNER, `update kesht_invites set revoked_at = now() where token = 'tok-good'`);
 await asExpectFailure(db, STRANGER, 'a revoked link is refused', `select redeem_invite('tok-good')`);
 
-// A viewer must not be able to create invite links for someone else's kesht.
+// A member must not be able to create invite links for someone else's kesht.
 await asExpectFailure(
   db,
-  VIEWER,
-  'a viewer cannot create share links',
-  `insert into kesht_invites (kesht_id, token, created_by) values ('kesht-1', 'tok-bad', '${VIEWER.sub}')`,
+  MEMBER,
+  'a member cannot create share links',
+  `insert into kesht_invites (kesht_id, token, created_by) values ('kesht-1', 'tok-bad', '${MEMBER.sub}')`,
 );
 
 // ---------------------------------------------------------------------------
-// Super admin: first sign-up becomes admin, everyone else is refused
+// A manager runs the kesht; only the owner touches access
 // ---------------------------------------------------------------------------
 
-console.log('\nSuper admin');
+console.log('\nA manager runs the kesht');
 
-// The three seeded users were inserted before the migration ran, so the
-// first-admin trigger has not fired for anyone yet.
-const preAdmins = await db.query('select count(*)::int as n from app_admins');
-check('no admin exists before any new sign-up', preAdmins.rows[0].n, 0);
+await as(db, OWNER, 'insert into kesht_members (kesht_id, role, invited_email) values ($1, $2, $3)', [
+  keshtId,
+  'manager',
+  MANAGER.email,
+]);
 
-const ADMIN = { sub: '44444444-4444-4444-8444-444444444444', email: 'admin@example.com' };
-const LATE = { sub: '55555555-5555-5555-8555-555555555555', email: 'late@example.com' };
-await db.query('insert into auth.users (id, email) values ($1, $2), ($3, $4)', [ADMIN.sub, ADMIN.email, LATE.sub, LATE.email]);
+const managerClaimed = await as(db, MANAGER, 'select claim_pending_invites() as n');
+check('a manager invite turns into access', managerClaimed.rows[0].n, 1);
 
-const adminRows = await db.query('select user_id from app_admins');
-check('the first new sign-up became the admin, the second did not', adminRows.rows.map((r) => r.user_id), [ADMIN.sub]);
+const managerRole = await as(db, MANAGER, `select role from kesht_members where user_id = $1`, [MANAGER.sub]);
+check('…with the manager role', managerRole.rows.map((r) => r.role), ['manager']);
 
-const strangerAdminRows = await as(db, STRANGER, 'select user_id from app_admins');
-check('a non-admin sees no admin rows', strangerAdminRows.rows.length, 0);
+await as(db, MANAGER, 'select save_kesht_bundle($1, $2, $3, $4)', [
+  JSON.stringify({ ...saveArgs.p_kesht, name: 'Friends (managed)' }),
+  JSON.stringify(saveArgs.p_members),
+  JSON.stringify(saveArgs.p_rounds),
+  JSON.stringify(saveArgs.p_payments),
+]);
+const managedName = await as(db, OWNER, `select name from keshts where id = 'kesht-1'`);
+check('a manager can rewrite the kesht through save_kesht_bundle', managedName.rows[0].name, 'Friends (managed)');
 
-await asExpectFailure(db, VIEWER, 'a non-admin cannot make themselves admin', `insert into app_admins (user_id) values ('${VIEWER.sub}')`);
-await asExpectFailure(db, STRANGER, 'a stranger cannot list users', 'select * from admin_list_users()');
-await asExpectFailure(db, STRANGER, 'a stranger cannot list keshts', 'select * from admin_list_keshts()');
-await asExpectFailure(db, STRANGER, 'a stranger cannot delete a kesht', `select admin_delete_kesht('kesht-1')`);
-await asExpectFailure(db, VIEWER, 'a viewer cannot list users either', 'select * from admin_list_users()');
+await as(db, MANAGER, `insert into members (id, kesht_id, name, turn_order) values ('m9', 'kesht-1', 'Karim', 3)`);
+const managerMember = await as(db, MANAGER, `select id from members where id = 'm9'`);
+check('a manager can add a member', managerMember.rows.length, 1);
+await as(db, MANAGER, `delete from members where id = 'm9'`);
 
-checks += 1;
-await db.exec('set role anon');
-try {
-  await db.query('select user_id from app_admins');
-  failures.push('anon can read app_admins — expected the database to refuse this');
-  console.log('  FAIL the anon role can read app_admins');
-} catch {
-  console.log('  ok   the anon role has no access to app_admins');
-} finally {
-  await db.exec('reset role');
-}
+const managerPaid = await as(db, MANAGER, `update payments set paid = true where id = 'p2' returning id`);
+check('a manager can mark a payment as paid', managerPaid.rows.length, 1);
 
-const userList = await as(db, ADMIN, 'select * from admin_list_users()');
-check(
-  'admin_list_users shows every account',
-  { count: userList.rows.length, hasOwner: userList.rows.some((r) => r.email === OWNER.email) },
-  { count: 5, hasOwner: true },
+const managerDelete = await as(db, MANAGER, `delete from keshts where id = 'kesht-1' returning id`);
+check('a manager cannot delete the kesht', managerDelete.rows.length, 0);
+
+await asExpectFailure(
+  db,
+  MANAGER,
+  'a manager cannot change who has access',
+  `insert into kesht_members (kesht_id, role, invited_email) values ('kesht-1', 'member', 'newcomer@example.com')`,
 );
-
-const keshtList = await as(db, ADMIN, 'select * from admin_list_keshts()');
-check(
-  'admin_list_keshts shows the kesht with its owner and counts',
-  keshtList.rows.map((r) => ({ kesht_id: r.kesht_id, owner_email: r.owner_email, member_count: r.member_count, round_count: r.round_count })),
-  [{ kesht_id: 'kesht-1', owner_email: OWNER.email, member_count: 2, round_count: 1 }],
+await asExpectFailure(
+  db,
+  MANAGER,
+  'a manager cannot create share links',
+  `insert into kesht_invites (kesht_id, token, created_by) values ('kesht-1', 'tok-manager', '${MANAGER.sub}')`,
 );
-
-await as(db, ADMIN, `select admin_delete_kesht('kesht-1')`);
-console.log('  ok   admin_delete_kesht removed another user\'s kesht');
-
-const orphanCounts = await db.query(`
-  select (select count(*)::int from keshts) as keshts,
-         (select count(*)::int from members) as members,
-         (select count(*)::int from rounds) as rounds,
-         (select count(*)::int from payments) as payments,
-         (select count(*)::int from kesht_members) as memberships,
-         (select count(*)::int from kesht_invites) as invites
-`);
-check(
-  'the delete cascaded to every child table',
-  orphanCounts.rows[0],
-  { keshts: 0, members: 0, rounds: 0, payments: 0, memberships: 0, invites: 0 },
-);
-
-await asExpectFailure(db, ADMIN, 'deleting the same kesht again fails cleanly', `select admin_delete_kesht('kesht-1')`);
 
 // ---------------------------------------------------------------------------
 console.log(`\n${checks - failures.length}/${checks} checks passed`);

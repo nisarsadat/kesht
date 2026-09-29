@@ -23,17 +23,19 @@ Each account has its own keshts. You sign in with an email and password.
 
 A kesht can be **shared** from its Overview page (*Share*):
 
-- **The owner** — the account that created it — can do everything, including managing who
+- **The owner** — the account that created it — can do everything, including deciding who
   has access.
-- **Everyone else** is a **read-only viewer**. They can open the group and see members,
-  payments, who received and the history, but every control that changes something is
-  hidden, and the database itself rejects their writes.
+- **A manager** runs the kesht day to day: they can change the kesht, its members, months
+  and payments, but not who has access.
+- **A member** can only look. Every control that changes something is hidden, and the
+  database itself rejects their writes.
 
 Two ways to give access:
 
-- **By email** — type someone's address. Access starts the moment they sign up with it, so
-  no mail server is needed.
-- **By link** — generate a link that anyone signed in can open to join as a viewer. Links
+- **By email** — type someone's address and pick *Member* or *Manager*. Access starts the
+  moment they sign up with that address, so no mail server is needed. The owner can switch
+  somebody between member and manager at any time.
+- **By link** — generate a link that anyone signed in can open to join as a member. Links
   expire after 30 days and can be revoked.
 
 ## Set up Supabase
@@ -103,14 +105,16 @@ does not do this.
 `npm run test:sql` runs `supabase/0001_init.sql` against **real Postgres** (via PGlite,
 WebAssembly Postgres — no database server or Docker needed) with Supabase's `auth` schema
 and the `anon` / `authenticated` roles shimmed the way Supabase creates them. It then acts
-as an owner, a viewer and a stranger and checks the rules actually hold:
+as an owner, a manager, a member and a stranger and checks the rules actually hold:
 
-- a shared viewer can read a kesht but cannot rename it, delete it, mark payments, add or
+- a shared member can read a kesht but cannot rename it, delete it, mark payments, add or
   remove members, or push changes through `save_kesht_bundle()`
+- a manager can change the kesht, its members and payments, but cannot delete the kesht or
+  change who has access
 - a stranger sees no rows at all
-- email invites grant nothing until claimed, and share links grant viewer access
+- email invites grant nothing until claimed, and share links grant member access
 - revoked and unknown share links are refused
-- a viewer cannot create share links
+- a member cannot create share links
 
 Run it after any change to the SQL. It needs no credentials and touches nothing external.
 
@@ -118,7 +122,7 @@ Run it after any change to the SQL. It needs no credentials and touches nothing 
 them against your own project. It has three parts:
 
 1. Structure — every table has row level security enabled and the expected policies.
-2. Behaviour — a shared viewer can read a kesht but cannot update, delete or insert into
+2. Behaviour — a shared member can read a kesht but cannot update, delete or insert into
    it. Paste in two real account ids and run the block; it rolls back at the end.
 3. A quick look at what is stored.
 
@@ -132,7 +136,7 @@ Run it any time after `0001_init.sql`.
 | `members` | the people in a group, in turn order |
 | `rounds` | one month of a group: who receives, open or closed |
 | `payments` | what each member owes or paid for one round |
-| `kesht_members` | who may see a kesht, and whether they are owner or viewer |
+| `kesht_members` | who may see a kesht, and whether they are owner, manager or member |
 | `kesht_invites` | share links, with expiry and revocation |
 
 Changing anything rewrites that one kesht and its members, rounds and payments through a

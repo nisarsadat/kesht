@@ -26,19 +26,20 @@ select tablename, cmd, policyname
 --   save_kesht_bundle    -> invoker    (row level security applies)
 --   claim_pending_invites -> definer
 --   redeem_invite        -> definer
---   is_kesht_member/owner, is_round_member/owner -> definer
+--   is_kesht_member/owner, is_round_member, can_edit_kesht/round -> definer
 select p.proname as function_name, p.prosecdef as security_definer
   from pg_proc p
   join pg_namespace n on n.oid = p.pronamespace
  where n.nspname = 'public'
    and p.proname in (
      'save_kesht_bundle', 'claim_pending_invites', 'redeem_invite',
-     'is_kesht_member', 'is_kesht_owner', 'is_round_member', 'is_round_owner'
+     'is_kesht_member', 'is_kesht_owner', 'is_round_member',
+     'can_edit_kesht', 'can_edit_round'
    )
  order by p.proname;
 
 -- ---------------------------------------------------------------------------
--- Part 2 — behaviour: a shared viewer can read but cannot change.
+-- Part 2 — behaviour: a shared member can read but cannot change.
 --
 -- Create two accounts first (sign up twice through the app, or add users in
 -- Authentication -> Users), then paste their ids here and run this block.
@@ -46,7 +47,7 @@ select p.proname as function_name, p.prosecdef as security_definer
 --
 -- Replace these two values:
 --   <OWNER_UUID>  the account that owns the kesht
---   <VIEWER_UUID> the account it is shared with
+--   <MEMBER_UUID> the account it is shared with
 -- ---------------------------------------------------------------------------
 
 /*
@@ -61,16 +62,16 @@ select count(*) as owner_rows from public.kesht_members
 -- expect 1
 
 insert into public.kesht_members (kesht_id, user_id, role)
-values ('verify-kesht', '<VIEWER_UUID>', 'viewer');
+values ('verify-kesht', '<MEMBER_UUID>', 'member');
 
--- Act as the viewer.
+-- Act as the member.
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"<VIEWER_UUID>","email":"viewer@example.com"}';
+set local request.jwt.claims = '{"sub":"<MEMBER_UUID>","email":"member@example.com"}';
 
-select count(*) as viewer_can_see from public.keshts where id = 'verify-kesht';
+select count(*) as member_can_see from public.keshts where id = 'verify-kesht';
 -- expect 1  (read access works)
 
--- Each of these must fail or change nothing, because a viewer is read-only.
+-- Each of these must fail or change nothing, because a member is read-only.
 update public.keshts set name = 'hacked' where id = 'verify-kesht';
 -- expect 0 rows updated
 

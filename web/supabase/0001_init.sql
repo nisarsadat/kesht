@@ -61,17 +61,29 @@ create table if not exists public.payments (
   updated_at timestamptz not null default now()
 );
 
--- Who can see which kesht. The owner has full control, everyone else is a
--- read-only viewer. A row with a null user_id is a pending email invite that
--- is claimed when somebody signs up with that address.
+-- Who can see which kesht, and what they may do there:
+--   owner   — created it: manages access, changes and deletes everything.
+--   manager — runs it day to day: may change the kesht, its members, rounds
+--             and payments, but not who has access.
+--   member  — can only look.
+-- A row with a null user_id is a pending email invite that is claimed when
+-- somebody signs up with that address.
 create table if not exists public.kesht_members (
   id            uuid primary key default gen_random_uuid(),
   kesht_id      text not null references public.keshts (id) on delete cascade,
   user_id       uuid references auth.users (id) on delete cascade,
-  role          text not null check (role in ('owner', 'viewer')),
+  role          text not null check (role in ('owner', 'manager', 'member')),
   invited_email text,
   created_at    timestamptz not null default now()
 );
+
+-- Roles grew from owner/viewer into owner/manager/member. A database that was
+-- set up earlier still carries the old constraint, so it is replaced here and
+-- old viewer rows become members: the same read-only power under a new name.
+alter table public.kesht_members drop constraint if exists kesht_members_role_check;
+update public.kesht_members set role = 'member' where role = 'viewer';
+alter table public.kesht_members add constraint kesht_members_role_check
+  check (role in ('owner', 'manager', 'member'));
 
 -- Share links. Anyone signed in who opens a live token can join as a viewer.
 create table if not exists public.kesht_invites (
@@ -153,7 +165,21 @@ as $$
   );
 $$;
 
-create or replace function public.is_round_owner(p_round_id text)
+create or replace function public.can_edit_kesht(p_kesht_id text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from kesht_members m
+    where m.kesht_id = p_kesht_id and m.user_id = auth.uid()
+      and m.role in ('owner', 'manager')
+  );
+$$;
+
+create or replace function public.can_edit_round(p_round_id text)
 returns boolean
 language sql
 stable
@@ -164,7 +190,8 @@ as $$
     select 1
     from rounds r
     join kesht_members m on m.kesht_id = r.kesht_id
-    where r.id = p_round_id and m.user_id = auth.uid() and m.role = 'owner'
+    where r.id = p_round_id and m.user_id = auth.uid()
+      and m.role in ('owner', 'manager')
   );
 $$;
 
@@ -212,8 +239,8 @@ create policy keshts_insert on public.keshts
 drop policy if exists keshts_update on public.keshts;
 create policy keshts_update on public.keshts
   for update to authenticated
-  using (public.is_kesht_owner(id))
-  with check (public.is_kesht_owner(id));
+  using (public.can_edit_kesht(id))
+  with check (public.can_edit_kesht(id));
 
 drop policy if exists keshts_delete on public.keshts;
 create policy keshts_delete on public.keshts
@@ -226,17 +253,17 @@ create policy members_select on public.members
 
 drop policy if exists members_insert on public.members;
 create policy members_insert on public.members
-  for insert to authenticated with check (public.is_kesht_owner(kesht_id));
+  for insert to authenticated with check (public.can_edit_kesht(kesht_id));
 
 drop policy if exists members_update on public.members;
 create policy members_update on public.members
   for update to authenticated
-  using (public.is_kesht_owner(kesht_id))
-  with check (public.is_kesht_owner(kesht_id));
+  using (public.can_edit_kesht(kesht_id))
+  with check (public.can_edit_kesht(kesht_id));
 
 drop policy if exists members_delete on public.members;
 create policy members_delete on public.members
-  for delete to authenticated using (public.is_kesht_owner(kesht_id));
+  for delete to authenticated using (public.can_edit_kesht(kesht_id));
 
 -- rounds
 drop policy if exists rounds_select on public.rounds;
@@ -245,17 +272,17 @@ create policy rounds_select on public.rounds
 
 drop policy if exists rounds_insert on public.rounds;
 create policy rounds_insert on public.rounds
-  for insert to authenticated with check (public.is_kesht_owner(kesht_id));
+  for insert to authenticated with check (public.can_edit_kesht(kesht_id));
 
 drop policy if exists rounds_update on public.rounds;
 create policy rounds_update on public.rounds
   for update to authenticated
-  using (public.is_kesht_owner(kesht_id))
-  with check (public.is_kesht_owner(kesht_id));
+  using (public.can_edit_kesht(kesht_id))
+  with check (public.can_edit_kesht(kesht_id));
 
 drop policy if exists rounds_delete on public.rounds;
 create policy rounds_delete on public.rounds
-  for delete to authenticated using (public.is_kesht_owner(kesht_id));
+  for delete to authenticated using (public.can_edit_kesht(kesht_id));
 
 -- payments (reach the kesht through their round)
 drop policy if exists payments_select on public.payments;
@@ -264,23 +291,23 @@ create policy payments_select on public.payments
 
 drop policy if exists payments_insert on public.payments;
 create policy payments_insert on public.payments
-  for insert to authenticated with check (public.is_round_owner(round_id));
+  for insert to authenticated with check (public.can_edit_round(round_id));
 
 drop policy if exists payments_update on public.payments;
 create policy payments_update on public.payments
   for update to authenticated
-  using (public.is_round_owner(round_id))
-  with check (public.is_round_owner(round_id));
+  using (public.can_edit_round(round_id))
+  with check (public.can_edit_round(round_id));
 
 drop policy if exists payments_delete on public.payments;
 create policy payments_delete on public.payments
-  for delete to authenticated using (public.is_round_owner(round_id));
+  for delete to authenticated using (public.can_edit_round(round_id));
 
 -- kesht_members: you always see your own row, the owner sees everybody.
 drop policy if exists kesht_members_select on public.kesht_members;
 create policy kesht_members_select on public.kesht_members
   for select to authenticated
-  using (user_id = auth.uid() or public.is_kesht_owner(kesht_id));
+  using (user_id = auth.uid() or public.can_edit_kesht(kesht_id));
 
 drop policy if exists kesht_members_insert on public.kesht_members;
 create policy kesht_members_insert on public.kesht_members
@@ -356,10 +383,10 @@ begin
       updated_at     = coalesce((p_kesht ->> 'updated_at')::timestamptz, now())
     where id = v_id;
 
-    -- Where the owner would have matched; anyone else stops here with a clear
+    -- Where a manager would have matched; anyone else stops here with a clear
     -- reason instead of silently changing nothing.
     if not found then
-      raise exception 'kesht_not_found_or_not_owner';
+      raise exception 'kesht_not_found_or_not_manager';
     end if;
   else
     insert into keshts (
@@ -447,9 +474,9 @@ $$;
 -- ---------------------------------------------------------------------------
 -- redeem_invite
 --
--- Joins the caller to a kesht from a share link, as a viewer. Returns the
--- kesht id so the app can open it. SECURITY DEFINER for the same reason:
--- membership rows for someone else's kesht are otherwise not writable.
+-- Joins the caller to a kesht from a share link, as a member (read-only).
+-- Returns the kesht id so the app can open it. SECURITY DEFINER for the same
+-- reason: membership rows for someone else's kesht are otherwise not writable.
 -- ---------------------------------------------------------------------------
 
 create or replace function public.redeem_invite(p_token text)
@@ -479,7 +506,7 @@ begin
   end if;
 
   insert into kesht_members (kesht_id, user_id, role, invited_email)
-  values (v_invite.kesht_id, v_uid, 'viewer', v_email)
+  values (v_invite.kesht_id, v_uid, 'member', v_email)
   on conflict do nothing;
 
   return v_invite.kesht_id;
@@ -512,160 +539,19 @@ revoke all on function public.redeem_invite(text) from public, anon;
 grant execute on function public.redeem_invite(text) to authenticated;
 
 -- ---------------------------------------------------------------------------
--- Super admin
+-- Retired: the single super admin
 --
--- One account is trusted to see and clean up everything. The first account
--- created after this file runs becomes the admin automatically (guarded by a
--- transaction lock, so two simultaneous sign-ups cannot both claim it), and
--- accounts that existed before this section can be made admin by hand:
+-- An earlier version of this file created an app_admins table, a trigger that
+-- made the first sign-up the admin, and three admin_* RPCs. Access is now
+-- managed per kesht (owner / manager / member) and nothing uses those objects
+-- any more. Where that version was already applied, remove them once in the
+-- SQL editor:
 --
---   insert into public.app_admins (user_id)
---   select id from auth.users where email = 'you@example.com'
---   on conflict do nothing;
---
--- Everything is enforced here on the server. The hidden /admin page is a
--- convenience, not the gate: the database refuses non-admins directly.
+--   drop trigger if exists grant_first_admin on auth.users;
+--   drop function if exists public.grant_first_admin();
+--   drop function if exists public.is_app_admin();
+--   drop function if exists public.admin_list_users();
+--   drop function if exists public.admin_list_keshts();
+--   drop function if exists public.admin_delete_kesht(text);
+--   drop table if exists public.app_admins;
 -- ---------------------------------------------------------------------------
-
-create table if not exists public.app_admins (
-  user_id    uuid primary key references auth.users (id) on delete cascade,
-  created_at timestamptz not null default now()
-);
-
-create or replace function public.is_app_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from app_admins a where a.user_id = auth.uid()
-  );
-$$;
-
--- The first user ever to sign up becomes the admin. The advisory lock makes
--- "is the table still empty?" and the insert one atomic step, so a race
--- between two first sign-ups picks exactly one of them.
-create or replace function public.grant_first_admin()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  perform pg_advisory_xact_lock(hashtext('kesht_first_admin'));
-  if not exists (select 1 from app_admins) then
-    insert into app_admins (user_id) values (new.id) on conflict do nothing;
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists grant_first_admin on auth.users;
-create trigger grant_first_admin
-  after insert on auth.users
-  for each row execute function public.grant_first_admin();
-
-alter table public.app_admins enable row level security;
-
-drop policy if exists app_admins_select on public.app_admins;
-create policy app_admins_select on public.app_admins
-  for select to authenticated
-  using (user_id = auth.uid() or public.is_app_admin());
-
-drop policy if exists app_admins_insert on public.app_admins;
-create policy app_admins_insert on public.app_admins
-  for insert to authenticated
-  with check (public.is_app_admin());
-
-drop policy if exists app_admins_delete on public.app_admins;
-create policy app_admins_delete on public.app_admins
-  for delete to authenticated
-  using (public.is_app_admin());
-
--- Admin reads go through these RPCs, so a plain user gets a clear refusal
--- instead of silent empty lists.
-create or replace function public.admin_list_users()
-returns table (user_id uuid, email text, created_at timestamptz)
-language plpgsql
-stable
-security definer
-set search_path = public
-as $$
-begin
-  if not public.is_app_admin() then
-    raise exception 'not_admin' using errcode = '42501';
-  end if;
-  return query
-    select u.id, u.email, u.created_at
-      from auth.users u
-     order by u.created_at asc;
-end;
-$$;
-
-create or replace function public.admin_list_keshts()
-returns table (
-  kesht_id     text,
-  name         text,
-  status       text,
-  owner_email  text,
-  member_count integer,
-  round_count  integer,
-  created_at   timestamptz
-)
-language plpgsql
-stable
-security definer
-set search_path = public
-as $$
-begin
-  if not public.is_app_admin() then
-    raise exception 'not_admin' using errcode = '42501';
-  end if;
-  return query
-    select k.id,
-           k.name,
-           k.status,
-           ou.email,
-           (select count(*)::int from members m where m.kesht_id = k.id),
-           (select count(*)::int from rounds r where r.kesht_id = k.id),
-           k.created_at
-      from keshts k
-      left join kesht_members om on om.kesht_id = k.id and om.role = 'owner'
-      left join auth.users ou on ou.id = om.user_id
-     order by k.created_at asc;
-end;
-$$;
-
--- Deleting the kesht row takes its members, rounds, payments, memberships and
--- invite links with it (every child table references it on delete cascade).
-create or replace function public.admin_delete_kesht(p_kesht_id text)
-returns void
-language plpgsql
-volatile
-security definer
-set search_path = public
-as $$
-begin
-  if not public.is_app_admin() then
-    raise exception 'not_admin' using errcode = '42501';
-  end if;
-  delete from keshts where id = p_kesht_id;
-  if not found then
-    raise exception 'kesht_not_found' using errcode = 'P0002';
-  end if;
-end;
-$$;
-
-revoke all on public.app_admins from anon, public;
-grant select, insert, delete on public.app_admins to authenticated;
-
-revoke all on function public.admin_list_users() from public, anon;
-grant execute on function public.admin_list_users() to authenticated;
-
-revoke all on function public.admin_list_keshts() from public, anon;
-grant execute on function public.admin_list_keshts() to authenticated;
-
-revoke all on function public.admin_delete_kesht(text) from public, anon;
-grant execute on function public.admin_delete_kesht(text) to authenticated;

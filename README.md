@@ -45,8 +45,8 @@ npm run typecheck
 
 `npm run test:sql` needs no database and no credentials. It loads `web/supabase/0001_init.sql`
 into Postgres compiled to WebAssembly (PGlite), then checks the row-level security rules really
-hold: a shared viewer can read a kesht but cannot change it, a stranger sees nothing, and
-revoked share links are refused. It runs on every push via
+hold: a shared member can read a kesht but cannot change it, a manager can run it without
+touching who has access, a stranger sees nothing, and revoked share links are refused. It runs on every push via
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 The kesht rules engine is tested from the mobile side:

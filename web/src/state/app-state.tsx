@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import { fetchIsAdmin } from '../data/admin';
 import { store, type Mode, type Role } from '../data/store';
 import { isCloudConfigured, supabase } from '../data/supabase';
 import type { Bundle, KeshtSummary, Language, RuleCode } from '../domain/types';
@@ -16,8 +15,6 @@ type AppState = {
   session: Session | null;
   authReady: boolean;
   email: string | null;
-  /** True when the signed-in account is the super admin (a row in app_admins). */
-  isAdmin: boolean;
   loadingData: boolean;
   language: Language;
   direction: 'rtl' | 'ltr';
@@ -37,8 +34,10 @@ type AppState = {
   sendPasswordReset: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
   roleOf: (keshtId: string) => Role | null;
-  /** Only the owner of a kesht may change it; everyone else is read-only. */
+  /** The owner and managers may change a kesht; members only look. */
   canEdit: (keshtId: string) => boolean;
+  /** Only the owner decides who has access to a kesht. */
+  canManage: (keshtId: string) => boolean;
   lastError: string | null;
   clearLastError: () => void;
   hasLocalData: boolean;
@@ -77,7 +76,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const revision = useSyncExternalStore(store.subscribe, store.getRevision, store.getRevision);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
   const attached = useRef<string | null>(null);
 
   const language = store.getLanguage();
@@ -113,22 +111,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     attached.current = userId;
     if (userId) void store.attach(userId);
     else store.detach();
-    // Resolved once per identity change; signing out clears it immediately.
-    let active = true;
-    if (!userId) {
-      setIsAdmin(false);
-      return;
-    }
-    void fetchIsAdmin()
-      .then((admin) => {
-        if (active) setIsAdmin(admin);
-      })
-      .catch(() => {
-        if (active) setIsAdmin(false);
-      });
-    return () => {
-      active = false;
-    };
   }, [session]);
 
   // Kept separate from the value below so their identity only changes when the
@@ -154,6 +136,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setTheme: (next: ThemeName) => store.setTheme(next),
       roleOf: (keshtId: string) => store.roleOf(keshtId),
       canEdit: (keshtId: string) => store.canEdit(keshtId),
+      canManage: (keshtId: string) => store.canManage(keshtId),
       clearLastError: () => store.clearLastError(),
       dismissLocalImport: () => store.dismissLocalImport(),
       importLocalData: () => store.importLocalData(),
@@ -211,7 +194,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       session,
       authReady,
       email: session?.user.email ?? null,
-      isAdmin,
       loadingData: !store.isLoaded(),
       language,
       direction: language === 'fa' ? 'rtl' : 'ltr',
@@ -222,7 +204,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       hasLocalData: store.hasLocalData(),
       localDataCount: store.localDataCount(),
     };
-  }, [helpers, actions, theme, revision, session, authReady, isAdmin]);
+  }, [helpers, actions, theme, revision, session, authReady]);
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }

@@ -11,7 +11,6 @@ export function HomePage() {
     language,
     mode,
     email,
-    isAdmin,
     signOut,
     roleOf,
     hasLocalData,
@@ -62,13 +61,16 @@ export function HomePage() {
           <span className="muted">{t('emptyBody')}</span>
         </Card>
       ) : (
-        items.map((item) => (
+        items.map((item) => {
+          const role = roleOf(item.id);
+          return (
           <Link key={item.id} to={`/k/${item.id}`} style={{ textDecoration: 'none', color: 'inherit' }} className="fade-in">
             <Card style={{ cursor: 'pointer' }}>
               <div className="spread">
                 <span className="title-lg">{item.name}</span>
                 <span className="badges">
-                  {roleOf(item.id) === 'viewer' ? <Badge label={t('sharedBadge')} tone="stone" /> : null}
+                  {role === 'manager' ? <Badge label={t('roleManager')} tone="gold" /> : null}
+                  {role === 'member' ? <Badge label={t('sharedBadge')} tone="stone" /> : null}
                   <Badge
                     label={t(item.status)}
                     tone={item.status === 'active' ? 'green' : item.status === 'completed' ? 'stone' : 'gold'}
@@ -80,7 +82,8 @@ export function HomePage() {
               </span>
             </Card>
           </Link>
-        ))
+          );
+        })
       )}
 
       {mode === 'cloud' ? (
@@ -89,7 +92,6 @@ export function HomePage() {
           <span className="muted">
             {t('signedInAs')}: {email ?? t('none')}
           </span>
-          {isAdmin ? <Button to="/admin" label={t('adminTitle')} tone="ghost" small /> : null}
           <Button label={t('signOut')} tone="ghost" small onClick={() => void signOut()} />
         </Card>
       ) : null}

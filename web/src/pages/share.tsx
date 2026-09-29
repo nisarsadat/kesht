@@ -11,6 +11,8 @@ import {
   listInviteLinks,
   removeCollaborator,
   revokeInviteLink,
+  setCollaboratorRole,
+  type AccessRole,
   type Collaborator,
   type InviteLink,
 } from '../data/sharing';
@@ -29,19 +31,21 @@ function formatDate(value: string, language: 'fa' | 'en'): string {
 export function SharePage() {
   const { id } = useParams<{ id: string }>();
   const bundle = useBundle(id);
-  const { t, language, mode, canEdit, email, authErrorFrom } = useApp();
+  const { t, language, mode, canManage, email, authErrorFrom } = useApp();
 
   const [people, setPeople] = useState<Collaborator[]>([]);
   const [links, setLinks] = useState<InviteLink[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
+  /** The role the next invited address joins with; the owner can change it later. */
+  const [inviteRole, setInviteRole] = useState<Exclude<AccessRole, 'owner'>>('member');
   const [error, setError] = useState('');
   const [pendingRemove, setPendingRemove] = useState<Collaborator | null>(null);
   const [pendingRevoke, setPendingRevoke] = useState<InviteLink | null>(null);
 
   const keshtId = bundle?.kesht.id;
-  const editable = keshtId ? canEdit(keshtId) : false;
+  const manageable = keshtId ? canManage(keshtId) : false;
 
   const load = useCallback(async () => {
     if (!keshtId) return;
@@ -61,8 +65,8 @@ export function SharePage() {
   }, [load]);
 
   if (!bundle || !keshtId) return null;
-  // Only the owner manages access; a viewer has no business on this screen.
-  if (!editable) return <Navigate to={`/k/${keshtId}`} replace />;
+  // Only the owner manages access; managers and members have no business here.
+  if (!manageable) return <Navigate to={`/k/${keshtId}`} replace />;
 
   async function invite(event: FormEvent): Promise<void> {
     event.preventDefault();
@@ -74,7 +78,7 @@ export function SharePage() {
     }
     setBusy(true);
     try {
-      await inviteByEmail(keshtId, inviteEmail);
+      await inviteByEmail(keshtId, inviteEmail, inviteRole);
       setInviteEmail('');
       await load();
       notify(t('notifyInviteSent'));
@@ -139,6 +143,20 @@ export function SharePage() {
     }
   }
 
+  async function changeRole(person: Collaborator, role: Exclude<AccessRole, 'owner'>): Promise<void> {
+    setError('');
+    setBusy(true);
+    try {
+      await setCollaboratorRole(person.id, role);
+      await load();
+      notify(t('notifyRoleChanged'));
+    } catch (caught) {
+      setError(authErrorFrom(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (mode === 'local') {
     return (
       <Screen title={t('shareTitle')} backTo={`/k/${keshtId}`}>
@@ -177,17 +195,40 @@ export function SharePage() {
             <div key={person.id} className="spread">
               <span className="person">
                 <span className="strong">{person.email ?? person.userId ?? t('none')}</span>
-                <span className="muted">
-                  {person.role === 'owner' ? t('roleOwner') : t('roleViewer')} ·{' '}
-                  {person.userId ? t('joined') : t('pendingInvite')}
-                  {mine ? ` · ${t('you')}` : ''}
-                </span>
+              <span className="muted">
+                {person.role === 'owner'
+                  ? t('roleOwner')
+                  : person.role === 'manager'
+                    ? t('roleManager')
+                    : t('roleMember')}{' '}
+                · {person.userId ? t('joined') : t('pendingInvite')}
+                {mine ? ` · ${t('you')}` : ''}
               </span>
-              {person.role === 'owner' ? (
-                <Badge label={t('roleOwner')} tone="gold" />
-              ) : (
+            </span>
+            {person.role === 'owner' ? (
+              <Badge label={t('roleOwner')} tone="gold" />
+            ) : (
+              <span className="row">
+                {person.role === 'manager' ? (
+                  <Button
+                    label={t('makeMember')}
+                    tone="ghost"
+                    small
+                    disabled={busy}
+                    onClick={() => void changeRole(person, 'member')}
+                  />
+                ) : (
+                  <Button
+                    label={t('makeManager')}
+                    tone="ghost"
+                    small
+                    disabled={busy}
+                    onClick={() => void changeRole(person, 'manager')}
+                  />
+                )}
                 <Button label={t('removeAccess')} tone="ghost" small onClick={() => setPendingRemove(person)} />
-              )}
+              </span>
+            )}
             </div>
           );
         })}
@@ -196,7 +237,23 @@ export function SharePage() {
       <form className="form" onSubmit={invite}>
         <Card>
           <span className="strong">{t('inviteByEmail')}</span>
+          <span className="muted">{t('memberReadOnlyHint')}</span>
           <Field label={t('email')} value={inviteEmail} onChange={setInviteEmail} type="email" />
+          <span className="muted">{t('inviteAs')}</span>
+          <span className="row">
+            <Button
+              label={t('roleMember')}
+              tone={inviteRole === 'member' ? 'primary' : 'ghost'}
+              small
+              onClick={() => setInviteRole('member')}
+            />
+            <Button
+              label={t('roleManager')}
+              tone={inviteRole === 'manager' ? 'primary' : 'ghost'}
+              small
+              onClick={() => setInviteRole('manager')}
+            />
+          </span>
           <Button type="submit" label={t('invite')} disabled={busy} />
         </Card>
       </form>
