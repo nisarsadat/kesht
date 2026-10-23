@@ -143,6 +143,7 @@ const fa = {
   authUnconfirmed: 'ایمیل شما تأیید نشده است. ایمیل خود را ببینید.',
   authWeakPassword: 'رمز عبور باید حداقل ۶ حرف باشد.',
   authRateLimited: 'تلاش‌های زیاد. کمی بعد دوباره کوشش کنید.',
+  resetInvalid: 'این لینک بازیابی رمز نامعتبر یا منقضی شده است. دوباره درخواست کنید.',
   emailInvalid: 'ایمیل درست نیست.',
   passwordMismatch: 'رمز عبور و تکرار آن یکسان نیست.',
   notAuthenticated: 'اول وارد شوید.',
@@ -191,7 +192,7 @@ const fa = {
   localMode: 'حالت محلی — داده‌ها فقط در همین مرورگر ذخیره می‌شوند.',
   notConfiguredTitle: 'پایگاه داده وصل نیست',
   notConfiguredBody:
-    'برای اجرای این نسخه باید آدرس و کلید Supabase را تنظیم کنید: VITE_SUPABASE_URL و VITE_SUPABASE_ANON_KEY.',
+    'برای اجرای این نسخه باید آدرس Neon را تنظیم کنید: VITE_NEON_AUTH_URL و VITE_NEON_DATA_API_URL.',
   importTitle: 'آوردن داده‌های این مرورگر',
   importBody: '{count} کشت در این مرورگر پیدا شد. به حساب شما آورده شود؟',
   importYes: 'بله، بیاور',
@@ -370,6 +371,7 @@ const en: Record<keyof typeof fa, string> = {
   authUnconfirmed: 'Your email is not confirmed yet. Please check your inbox.',
   authWeakPassword: 'The password must be at least 6 characters.',
   authRateLimited: 'Too many attempts. Please try again a little later.',
+  resetInvalid: 'This reset link is invalid or has expired. Request a new one.',
   emailInvalid: 'That email address is not valid.',
   passwordMismatch: 'The two passwords do not match.',
   notAuthenticated: 'Please sign in first.',
@@ -418,7 +420,7 @@ const en: Record<keyof typeof fa, string> = {
   localMode: 'Local mode — data is kept in this browser only.',
   notConfiguredTitle: 'Database not connected',
   notConfiguredBody:
-    'This build needs Supabase credentials: set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+    'This build needs Neon endpoints: set VITE_NEON_AUTH_URL and VITE_NEON_DATA_API_URL.',
   importTitle: 'Bring over this browser’s data',
   importBody: 'Found {count} kesht(s) saved in this browser. Add them to your account?',
   importYes: 'Yes, bring them over',

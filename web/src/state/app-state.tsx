@@ -1,16 +1,18 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import type { Session } from '@supabase/supabase-js';
+import { isCloudConfigured, neon } from '../data/neon';
 import { store, type Mode, type Role } from '../data/store';
-import { isCloudConfigured, supabase } from '../data/supabase';
 import type { Bundle, KeshtSummary, Language, RuleCode } from '../domain/types';
 import { KeshtRuleError } from '../domain/types';
 import { ruleMessage, translate, type MessageKey } from '../i18n/messages';
 import { paletteFor, type Palette, type ThemeName } from '../lib/theme';
 
+/** Minimal session shape the UI needs. The Neon adapter returns a fuller object. */
+type Session = { user: { id: string; email?: string | null } } | null;
+
 type AppState = {
-  /** 'cloud' on Supabase, 'local' when running without credentials in dev. */
+  /** 'cloud' on Neon, 'local' when running without credentials in dev. */
   mode: Mode;
-  /** False when a production build has no Supabase credentials. */
+  /** False when a production build has no Neon credentials. */
   configured: boolean;
   session: Session | null;
   authReady: boolean;
@@ -32,7 +34,7 @@ type AppState = {
   signUp: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
-  updatePassword: (password: string) => Promise<void>;
+  resetPassword: (token: string, password: string) => Promise<void>;
   roleOf: (keshtId: string) => Role | null;
   /** The owner and managers may change a kesht; members only look. */
   canEdit: (keshtId: string) => boolean;
@@ -49,16 +51,17 @@ type AppState = {
 
 const AppContext = createContext<AppState | null>(null);
 
-/** Turns Supabase's English auth failures into something people can read. */
+/** Turns auth failures into something people can read. */
 function authMessageKey(message: string): MessageKey | null {
   const text = message.toLowerCase();
-  if (text.includes('invalid login credentials')) return 'authInvalid';
-  if (text.includes('already registered') || text.includes('already been registered')) return 'authExists';
+  if (text.includes('invalid login credentials') || text.includes('invalid email or password')) return 'authInvalid';
+  if (text.includes('already registered') || text.includes('already been registered') || text.includes('user already exists')) return 'authExists';
   if (text.includes('email not confirmed')) return 'authUnconfirmed';
-  if (text.includes('at least 6 characters') || text.includes('password should be')) return 'authWeakPassword';
+  if (text.includes('at least 6 characters') || text.includes('password should be') || text.includes('password too short')) return 'authWeakPassword';
   if (text.includes('rate limit') || text.includes('too many')) return 'authRateLimited';
   if (text.includes('invalid format') || text.includes('invalid email')) return 'emailInvalid';
   if (text.includes('not_authenticated')) return 'notAuthenticated';
+  if (text.includes('invalid token') || text.includes('token has expired')) return 'resetInvalid';
   // Browser-level failures arrive as "Failed to fetch" / "Load failed".
   if (text.includes('failed to fetch') || text.includes('load failed') || text.includes('network')) {
     return 'networkError';
@@ -82,7 +85,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const theme = store.getTheme();
 
   useEffect(() => {
-    const client = supabase;
+    const client = neon;
     if (!client) {
       // Local-only build: there is no account to wait for.
       setAuthReady(true);
@@ -105,7 +108,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!supabase) return;
+    if (!neon) return;
     const userId = session?.user.id ?? null;
     if (userId === attached.current) return;
     attached.current = userId;
@@ -142,32 +145,37 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       importLocalData: () => store.importLocalData(),
       refresh: () => store.refresh(),
       signIn: async (email: string, password: string) => {
-        const client = supabase;
+        const client = neon;
         if (!client) return;
         const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
         if (error) throw new Error(error.message);
       },
       signUp: async (email: string, password: string) => {
-        const client = supabase;
+        const client = neon;
         if (!client) return { needsConfirmation: false };
+        const displayName = email.split('@')[0] ?? email.trim();
         const { data, error } = await client.auth.signUp({
           email: email.trim(),
           password,
-          // Where the confirmation link comes back to.
-          options: { emailRedirectTo: globalThis.location?.origin ?? undefined },
+          // Better Auth needs a name and uses emailRedirectTo as the confirmation
+          // link callback. The display name is never shown anywhere important.
+          options: {
+            emailRedirectTo: globalThis.location?.origin ?? undefined,
+            data: { displayName },
+          },
         });
         if (error) throw new Error(error.message);
         // No session straight after signing up means confirmation is required.
         return { needsConfirmation: data.session === null };
       },
       signOut: async () => {
-        const client = supabase;
+        const client = neon;
         if (!client) return;
         const { error } = await client.auth.signOut();
         if (error) throw new Error(error.message);
       },
       sendPasswordReset: async (email: string) => {
-        const client = supabase;
+        const client = neon;
         if (!client) return;
         const origin = globalThis.location?.origin ?? '';
         const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
@@ -175,11 +183,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         });
         if (error) throw new Error(error.message);
       },
-      updatePassword: async (password: string) => {
-        const client = supabase;
+      resetPassword: async (token: string, password: string) => {
+        const client = neon;
         if (!client) return;
-        const { error } = await client.auth.updateUser({ password });
-        if (error) throw new Error(error.message);
+        const betterAuth = client.auth.getBetterAuthInstance();
+        const { error } = await betterAuth.resetPassword({ newPassword: password, token });
+        if (error) throw new Error(error.message ?? String(error));
       },
     }),
     [],

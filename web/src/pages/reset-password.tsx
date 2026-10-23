@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Card, Field, Screen } from '../components/ui';
 import { useApp } from '../state/app-state';
 
 export function ResetPasswordPage() {
-  const { t, session, sendPasswordReset, updatePassword, authErrorFrom } = useApp();
+  const { t, sendPasswordReset, resetPassword, authErrorFrom } = useApp();
+  const [searchParams] = useSearchParams();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -14,18 +15,19 @@ export function ResetPasswordPage() {
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  /* Arriving from the emailed link signs you in, so that state means "choose a
-   * new password"; otherwise this page asks for the address to send the link to. */
-  const choosingPassword = session !== null;
+  // The emailed link lands here with ?token=...
+  const token = searchParams.get('token');
+  const choosingPassword = token !== null && token !== '';
 
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
     setError('');
-    if (!email.includes('@') && !choosingPassword) {
-      setError(t('emailInvalid'));
-      return;
-    }
-    if (choosingPassword) {
+    if (!choosingPassword) {
+      if (!email.includes('@')) {
+        setError(t('emailInvalid'));
+        return;
+      }
+    } else {
       if (password.length < 6) {
         setError(t('authWeakPassword'));
         return;
@@ -38,7 +40,7 @@ export function ResetPasswordPage() {
     setBusy(true);
     try {
       if (choosingPassword) {
-        await updatePassword(password);
+        await resetPassword(token, password);
         setDone(true);
       } else {
         await sendPasswordReset(email);
@@ -53,10 +55,10 @@ export function ResetPasswordPage() {
 
   if (done) {
     return (
-      <Screen title={t('resetPassword')} backTo="/">
+      <Screen title={t('resetPassword')} backTo="/signin">
         <Card>
           <span className="strong">{t('passwordUpdated')}</span>
-          <Button to="/" label={t('goHome')} />
+          <Button to="/signin" label={t('backToSignIn')} />
         </Card>
       </Screen>
     );

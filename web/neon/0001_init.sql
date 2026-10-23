@@ -1,12 +1,18 @@
--- Kesht — Supabase schema, access rules and functions.
+-- Kesht — Neon schema, access rules and functions.
 --
--- Paste this whole file into the Supabase SQL editor and run it once.
--- It is safe to run again: every object is created with "if not exists" or
--- replaced, and policies are dropped before being recreated.
+-- Paste this whole file into the Neon SQL editor (or run it with psql against
+-- the DIRECT, unpooled connection string) once. It is safe to run again: every
+-- object is created with "if not exists" or replaced, and policies are dropped
+-- before being recreated.
 --
--- Ids stay `text` (not `uuid`) because the app generates its own ids and the
--- phone app's SQLite schema uses TEXT for the same columns, which keeps the two
--- schemas compatible.
+-- Accounts come from Neon Auth (Managed Better Auth) and live in
+-- neon_auth."user"; Neon exposes auth.user_id() to row level security just like
+-- Supabase's auth.uid(). The Data API supplies the JWT and enforces RLS.
+--
+-- Kesht ids stay `text` (not `uuid`) because the app generates its own ids and
+-- the phone app's SQLite schema uses TEXT for the same columns, which keeps the
+-- two schemas compatible. Account ids are also text: Better Auth's ids are
+-- opaque strings, not UUIDs.
 
 -- ---------------------------------------------------------------------------
 -- Tables
@@ -14,7 +20,7 @@
 
 create table if not exists public.keshts (
   id             text primary key,
-  user_id        uuid not null references auth.users (id) on delete cascade,
+  user_id        text not null references neon_auth."user" (id) on delete cascade,
   name           text not null,
   monthly_amount integer not null check (monthly_amount > 0),
   currency       text not null default 'AFN',
@@ -71,7 +77,7 @@ create table if not exists public.payments (
 create table if not exists public.kesht_members (
   id            uuid primary key default gen_random_uuid(),
   kesht_id      text not null references public.keshts (id) on delete cascade,
-  user_id       uuid references auth.users (id) on delete cascade,
+  user_id       text references neon_auth."user" (id) on delete cascade,
   role          text not null check (role in ('owner', 'manager', 'member')),
   invited_email text,
   created_at    timestamptz not null default now()
@@ -90,7 +96,7 @@ create table if not exists public.kesht_invites (
   id         uuid primary key default gen_random_uuid(),
   kesht_id   text not null references public.keshts (id) on delete cascade,
   token      text not null unique,
-  created_by uuid not null references auth.users (id) on delete cascade,
+  created_by text not null references neon_auth."user" (id) on delete cascade,
   expires_at timestamptz not null default now() + interval '30 days',
   revoked_at timestamptz,
   created_at timestamptz not null default now()
@@ -133,7 +139,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from kesht_members m
-    where m.kesht_id = p_kesht_id and m.user_id = auth.uid()
+    where m.kesht_id = p_kesht_id and m.user_id = auth.user_id()
   );
 $$;
 
@@ -146,7 +152,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from kesht_members m
-    where m.kesht_id = p_kesht_id and m.user_id = auth.uid() and m.role = 'owner'
+    where m.kesht_id = p_kesht_id and m.user_id = auth.user_id() and m.role = 'owner'
   );
 $$;
 
@@ -161,7 +167,7 @@ as $$
     select 1
     from rounds r
     join kesht_members m on m.kesht_id = r.kesht_id
-    where r.id = p_round_id and m.user_id = auth.uid()
+    where r.id = p_round_id and m.user_id = auth.user_id()
   );
 $$;
 
@@ -174,7 +180,7 @@ set search_path = public
 as $$
   select exists (
     select 1 from kesht_members m
-    where m.kesht_id = p_kesht_id and m.user_id = auth.uid()
+    where m.kesht_id = p_kesht_id and m.user_id = auth.user_id()
       and m.role in ('owner', 'manager')
   );
 $$;
@@ -190,7 +196,7 @@ as $$
     select 1
     from rounds r
     join kesht_members m on m.kesht_id = r.kesht_id
-    where r.id = p_round_id and m.user_id = auth.uid()
+    where r.id = p_round_id and m.user_id = auth.user_id()
       and m.role in ('owner', 'manager')
   );
 $$;
@@ -234,7 +240,7 @@ create policy keshts_select on public.keshts
 
 drop policy if exists keshts_insert on public.keshts;
 create policy keshts_insert on public.keshts
-  for insert to authenticated with check (user_id = auth.uid());
+  for insert to authenticated with check (user_id = auth.user_id());
 
 drop policy if exists keshts_update on public.keshts;
 create policy keshts_update on public.keshts
@@ -307,7 +313,7 @@ create policy payments_delete on public.payments
 drop policy if exists kesht_members_select on public.kesht_members;
 create policy kesht_members_select on public.kesht_members
   for select to authenticated
-  using (user_id = auth.uid() or public.can_edit_kesht(kesht_id));
+  using (user_id = auth.user_id() or public.can_edit_kesht(kesht_id));
 
 drop policy if exists kesht_members_insert on public.kesht_members;
 create policy kesht_members_insert on public.kesht_members
@@ -331,7 +337,7 @@ create policy kesht_invites_select on public.kesht_invites
 drop policy if exists kesht_invites_insert on public.kesht_invites;
 create policy kesht_invites_insert on public.kesht_invites
   for insert to authenticated
-  with check (public.is_kesht_owner(kesht_id) and created_by = auth.uid());
+  with check (public.is_kesht_owner(kesht_id) and created_by = auth.user_id());
 
 drop policy if exists kesht_invites_update on public.kesht_invites;
 create policy kesht_invites_update on public.kesht_invites
@@ -395,7 +401,7 @@ begin
     )
     values (
       v_id,
-      auth.uid(),
+      auth.user_id(),
       p_kesht ->> 'name',
       (p_kesht ->> 'monthly_amount')::integer,
       coalesce(p_kesht ->> 'currency', 'AFN'),
@@ -454,14 +460,22 @@ set search_path = public
 as $$
 declare
   v_count integer := 0;
-  v_email text := auth.jwt() ->> 'email';
+  v_uid text := auth.user_id();
+  v_email text;
 begin
-  if auth.uid() is null or v_email is null then
+  if v_uid is null then
+    return 0;
+  end if;
+
+  -- Better Auth accounts live in neon_auth."user". Read the address from the
+  -- account row instead of assuming an email claim is present in the JWT.
+  select u.email into v_email from neon_auth."user" u where u.id = v_uid;
+  if v_email is null then
     return 0;
   end if;
 
   update kesht_members
-     set user_id = auth.uid()
+     set user_id = v_uid
    where user_id is null
      and invited_email is not null
      and lower(invited_email) = lower(v_email);
@@ -487,12 +501,14 @@ set search_path = public
 as $$
 declare
   v_invite kesht_invites;
-  v_uid uuid := auth.uid();
-  v_email text := auth.jwt() ->> 'email';
+  v_uid text := auth.user_id();
+  v_email text;
 begin
   if v_uid is null then
     raise exception 'not_authenticated';
   end if;
+
+  select u.email into v_email from neon_auth."user" u where u.id = v_uid;
 
   select * into v_invite
     from kesht_invites
@@ -516,8 +532,11 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Permissions: signed-in users only, never anonymous visitors.
 --
--- Supabase grants these by default, but spelling them out means this file also
--- works on a plain Postgres, and that nothing depends on project defaults.
+-- The Data API's "Grant public schema access" switch does this too, but
+-- spelling it out means the file also works on a plain Postgres and nothing
+-- depends on project defaults. Unauthenticated requests reach the Data API as
+-- the `anonymous` role and get no grants here, so RLS never has to hide
+-- anything from them: they see nothing at all.
 -- ---------------------------------------------------------------------------
 
 grant usage on schema public to authenticated;
@@ -529,29 +548,13 @@ grant select, insert, update, delete on public.payments      to authenticated;
 grant select, insert, update, delete on public.kesht_members to authenticated;
 grant select, insert, update, delete on public.kesht_invites to authenticated;
 
-revoke all on function public.save_kesht_bundle(jsonb, jsonb, jsonb, jsonb) from public, anon;
+-- Functions get EXECUTE to PUBLIC by default; take that back before granting
+-- it only to signed-in users.
+revoke all on function public.save_kesht_bundle(jsonb, jsonb, jsonb, jsonb) from public;
 grant execute on function public.save_kesht_bundle(jsonb, jsonb, jsonb, jsonb) to authenticated;
 
-revoke all on function public.claim_pending_invites() from public, anon;
+revoke all on function public.claim_pending_invites() from public;
 grant execute on function public.claim_pending_invites() to authenticated;
 
-revoke all on function public.redeem_invite(text) from public, anon;
+revoke all on function public.redeem_invite(text) from public;
 grant execute on function public.redeem_invite(text) to authenticated;
-
--- ---------------------------------------------------------------------------
--- Retired: the single super admin
---
--- An earlier version of this file created an app_admins table, a trigger that
--- made the first sign-up the admin, and three admin_* RPCs. Access is now
--- managed per kesht (owner / manager / member) and nothing uses those objects
--- any more. Where that version was already applied, remove them once in the
--- SQL editor:
---
---   drop trigger if exists grant_first_admin on auth.users;
---   drop function if exists public.grant_first_admin();
---   drop function if exists public.is_app_admin();
---   drop function if exists public.admin_list_users();
---   drop function if exists public.admin_list_keshts();
---   drop function if exists public.admin_delete_kesht(text);
---   drop table if exists public.app_admins;
--- ---------------------------------------------------------------------------

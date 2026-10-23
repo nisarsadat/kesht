@@ -8,10 +8,10 @@ It ships as two applications that share the same rules and the same screens:
 | App | Built with | Storage | Lives in |
 |---|---|---|---|
 | **Mobile** | Expo / React Native with Expo Router | on-device SQLite (`expo-sqlite`) | repository root — `app/`, `src/` |
-| **Web** | Vite + React | **Supabase** (Postgres + Auth) | [`web/`](web/) |
+| **Web** | Vite + React | **Neon** Postgres + Managed Better Auth | [`web/`](web/) |
 
 Both speak Dari (right-to-left) and English, with light and dark themes. The web app keeps
-everything in Supabase so several people can share one kesht and see the same records — see
+everything in Neon so several people can share one kesht and see the same records — see
 [`web/README.md`](web/README.md) for the full picture.
 
 ## Run locally
@@ -20,7 +20,7 @@ everything in Supabase so several people can share one kesht and see the same re
 
 ```bash
 cd web
-cp .env.example .env.local     # paste your Supabase project URL and anon key
+cp .env.example .env.local     # paste your Neon Auth and Data API URLs
 npm install
 npm run dev
 ```
@@ -43,7 +43,7 @@ npm run test:sql               # the schema and access rules, against real Postg
 npm run typecheck
 ```
 
-`npm run test:sql` needs no database and no credentials. It loads `web/supabase/0001_init.sql`
+`npm run test:sql` needs no database and no credentials. It loads `web/neon/0001_init.sql`
 into Postgres compiled to WebAssembly (PGlite), then checks the row-level security rules really
 hold: a shared member can read a kesht but cannot change it, a manager can run it without
 touching who has access, a stranger sees nothing, and revoked share links are refused. It runs on every push via
@@ -57,19 +57,17 @@ npm run test:rules
 
 ## Deploy
 
-The web app runs on **Vercel** with **Supabase** as its database.
+The web app runs on **Vercel** with **Neon** as its database.
 
-1. **Supabase** — create a project, paste `web/supabase/0001_init.sql` into the SQL editor and
-   run it, enable the **Email** provider, then copy the **Project URL** and the **anon public**
-   key from *Project Settings → API*.
+1. **Neon** — create a project, enable the **Data API** and **Managed Better Auth**, then run
+   `web/neon/0001_init.sql` in the SQL editor. Copy the **Auth base URL** and **Data API URL**.
 2. **Vercel** — import this repository, set **Root Directory** to `web`, and add
-   `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as environment variables.
-3. Back in **Supabase → Authentication → URL Configuration**, set the **Site URL** to your
-   deployed address and add it to **Redirect URLs**, so confirmation and password-reset links
-   return to your site.
+   `VITE_NEON_AUTH_URL` and `VITE_NEON_DATA_API_URL` as environment variables.
+3. Back in **Neon → Auth settings**, add your deployed address to the allowed redirect/callback
+   URLs so password-reset links return to your site.
 
-Only ever put the **anon public** key in the web app. The `service_role` key bypasses every
-access rule, and anything Vite bundles is downloadable by every visitor.
+Both Neon URLs are public endpoints; the real protection is row level security enforced by the
+signed-in user's JWT. Never put the database connection string in the web app.
 
 ## Layout
 
@@ -78,7 +76,7 @@ App.tsx, app/, src/        Expo app — screens in app/, storage and rules in sr
   src/db/                  SQLite repository
   src/domain/              kesht rules engine
 web/                       Vite web app (see web/README.md)
-  supabase/                0001_init.sql — tables, access rules and functions
+  neon/                    0001_init.sql — tables, access rules and functions
 .github/workflows/ci.yml   typecheck and access-rule tests on every push
 ```
 

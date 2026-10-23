@@ -1,7 +1,7 @@
-import { supabase } from './supabase';
+import { neon } from './neon';
 
 /**
- * Sharing runs straight against Supabase: it works with membership and invite
+ * Sharing runs straight against Neon: it works with membership and invite
  * rows rather than with a kesht's members, rounds or payments, so it does not
  * belong in the bundle store.
  */
@@ -46,8 +46,8 @@ type InviteRow = {
 };
 
 function client() {
-  if (!supabase) throw new Error('sharing_cloud_only');
-  return supabase;
+  if (!neon) throw new Error('sharing_cloud_only');
+  return neon;
 }
 
 export function inviteUrl(token: string): string {

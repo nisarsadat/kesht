@@ -1,11 +1,11 @@
 /**
- * Runs supabase/0001_init.sql against a real Postgres engine and checks that the
+ * Runs neon/0001_init.sql against a real Postgres engine and checks that the
  * access rules actually do what they claim.
  *
  * PGlite is Postgres compiled to WebAssembly, so this needs no database server.
- * Supabase's own `auth` schema is shimmed with the same functions it provides
- * (auth.uid() / auth.jwt() reading request.jwt.claims), and the `anon` and
- * `authenticated` roles are created the way Supabase creates them: plain roles
+ * Neon's environment is shimmed: auth.user_id() reading request.jwt.claims, the
+ * managed Better Auth account table at neon_auth."user" (text ids), and the
+ * `authenticated` / `anonymous` roles the Data API uses. They are plain roles
  * with no special privileges, so row level security genuinely applies.
  *
  *   npm run test:sql
@@ -17,12 +17,12 @@ import { dirname, join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const migration = readFileSync(join(here, '..', 'supabase', '0001_init.sql'), 'utf8');
+const migration = readFileSync(join(here, '..', 'neon', '0001_init.sql'), 'utf8');
 
-const OWNER = { sub: '11111111-1111-4111-8111-111111111111', email: 'owner@example.com' };
-const MEMBER = { sub: '22222222-2222-4222-8222-222222222222', email: 'member@example.com' };
-const MANAGER = { sub: '44444444-4444-4444-8444-444444444444', email: 'manager@example.com' };
-const STRANGER = { sub: '33333333-3333-4333-8333-333333333333', email: 'stranger@example.com' };
+const OWNER = { sub: 'user-owner-1', email: 'owner@example.com' };
+const MEMBER = { sub: 'user-member-2', email: 'member@example.com' };
+const MANAGER = { sub: 'user-manager-4', email: 'manager@example.com' };
+const STRANGER = { sub: 'user-stranger-3', email: 'stranger@example.com' };
 
 const failures = [];
 let checks = 0;
@@ -64,38 +64,38 @@ const db = new PGlite();
 await db.waitReady;
 
 // ---------------------------------------------------------------------------
-// Supabase's environment, reproduced.
+// Neon's environment, reproduced.
 // ---------------------------------------------------------------------------
 
 await db.exec(`
-  create role anon nologin;
+  create role anonymous nologin;
   create role authenticated nologin;
 
   create schema auth;
-  create table auth.users (
-    id uuid primary key,
+  create schema neon_auth;
+  create table neon_auth."user" (
+    id text primary key,
     email text unique,
-    created_at timestamptz not null default now()
+    name text
   );
-  create or replace function auth.jwt() returns jsonb
+  create or replace function auth.user_id() returns text
     language sql stable as $$
-      select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb;
+      select nullif(
+        coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb ->> 'sub',
+        ''
+      );
     $$;
-  create or replace function auth.uid() returns uuid
-    language sql stable as $$
-      select nullif(auth.jwt() ->> 'sub', '')::uuid;
-    $$;
-  grant usage on schema auth to anon, authenticated;
-  grant execute on function auth.jwt(), auth.uid() to anon, authenticated;
+  grant usage on schema auth to authenticated;
+  grant execute on function auth.user_id() to authenticated;
 
-  insert into auth.users (id, email) values
-    ('${OWNER.sub}', '${OWNER.email}'),
-    ('${MEMBER.sub}', '${MEMBER.email}'),
-    ('${MANAGER.sub}', '${MANAGER.email}'),
-    ('${STRANGER.sub}', '${STRANGER.email}');
+  insert into neon_auth."user" (id, email, name) values
+    ('${OWNER.sub}', '${OWNER.email}', 'Owner'),
+    ('${MEMBER.sub}', '${MEMBER.email}', 'Member'),
+    ('${MANAGER.sub}', '${MANAGER.email}', 'Manager'),
+    ('${STRANGER.sub}', '${STRANGER.email}', 'Stranger');
 `);
 
-console.log('\nApplying supabase/0001_init.sql …');
+console.log('\nApplying neon/0001_init.sql …');
 await db.exec(migration);
 console.log('  ok   migration applied\n');
 

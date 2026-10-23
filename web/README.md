@@ -2,8 +2,8 @@
 
 A browser build of the **Kesht** (کشت) app: rotating savings groups where each month one
 member receives everything the group paid in. It mirrors the mobile app's screens, rules,
-theme and Dari/English text, and stores everything in a **Supabase** database so several
-people can share one kesht and see the same records.
+theme and Dari/English text, and stores everything in a **Neon** Postgres database so
+several people can share one kesht and see the same records.
 
 ## What it does
 
@@ -38,47 +38,47 @@ Two ways to give access:
 - **By link** — generate a link that anyone signed in can open to join as a member. Links
   expire after 30 days and can be revoked.
 
-## Set up Supabase
+## Set up Neon
 
-1. Create a project at [supabase.com](https://supabase.com).
-2. Open **SQL Editor**, paste all of **`supabase/0001_init.sql`**, and run it. That creates
-   the tables, the access rules and the functions the app calls.
-3. In **Authentication → Providers**, make sure **Email** is enabled.
-   - With **Confirm email** on (the default) people must open a link before first signing
-     in. Supabase's built-in mail works for this, with a low hourly limit.
-   - Turning it off makes sign-up immediate — fine while you are testing.
-4. In **Authentication → URL Configuration** set:
-   - **Site URL**: `http://localhost:5173` while developing, your Vercel URL in production.
-   - **Redirect URLs**: add `http://localhost:5173/**` and `https://your-app.vercel.app/**`
-     (confirmation and password-reset links come back to these).
-5. In **Project Settings → API**, copy the **Project URL** and the **anon public** key.
+1. Create a project at [neon.tech](https://neon.tech).
+2. Pick the branch you want to use. If it says **archived**, click it to unarchive.
+3. Open the **Data API** tab and enable it:
+   - Check **Use Managed Better Auth**.
+   - Check **Grant public schema access**.
+   - Copy the **Data API URL** (ends in `/rest/v1`).
+4. Open the **Auth** tab and enable **Managed Better Auth**.
+   - Copy the **Auth base URL** (ends in `/auth`).
+   - Under **Email / Password**, turn off **Require email verification** while testing
+     (otherwise the app cannot sign anyone in until emails are configured).
+5. Open the **SQL Editor** and run the whole **`neon/0001_init.sql`** file. That creates
+   the tables, row level security policies and the functions the app calls.
 
 Then point the app at the project:
 
 ```bash
 cd web
-cp .env.example .env.local     # fill in the two values
+cp .env.example .env.local     # paste the two URLs
 npm install
 npm run dev                    # http://localhost:5173
 ```
 
-`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are baked in at build time, so they must be
-set wherever you build. The anon key is designed to be public — **row level security** is
-what protects the data. Never put the `service_role` key in this app: it bypasses every rule.
+`VITE_NEON_AUTH_URL` and `VITE_NEON_DATA_API_URL` are baked in at build time, so they must
+be set wherever you build. Both are public endpoints — **row level security** and the
+signed-in user's JWT protect the data.
 
 ## Deploy to Vercel
 
 1. Push this repository to GitHub and import it in Vercel.
 2. On the project's settings, set **Root Directory** to `web`. Vercel detects Vite; the
    build command is `npm run build` and the output directory is `dist`.
-3. Under **Environment Variables**, add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+3. Under **Environment Variables**, add `VITE_NEON_AUTH_URL` and `VITE_NEON_DATA_API_URL`
    for **Production**, **Preview** and **Development**.
-4. Deploy, then add the resulting URL to Supabase's **Site URL** and **Redirect URLs**.
+4. In Neon's Auth settings, add your deployed URL to the allowed redirect/callback URLs.
 5. Set **Node.js Version** to 20 or newer (a `engines` field already asks for `>= 20`).
 
 `vercel.json` rewrites unknown paths to `index.html`, which is what makes deep links like
 `/k/<id>/month` and `/invite/<token>` load instead of 404. Routing uses the browser history
-API and Supabase's PKCE auth flow, so those links work with no extra configuration.
+API and Neon's managed auth flow.
 
 Running `npm run build` without credentials is not a silent failure: the site shows a
 "Database not connected" notice instead of quietly keeping data in one browser.
@@ -102,9 +102,9 @@ does not do this.
 
 ## Checking the access rules
 
-`npm run test:sql` runs `supabase/0001_init.sql` against **real Postgres** (via PGlite,
-WebAssembly Postgres — no database server or Docker needed) with Supabase's `auth` schema
-and the `anon` / `authenticated` roles shimmed the way Supabase creates them. It then acts
+`npm run test:sql` runs `neon/0001_init.sql` against **real Postgres** (via PGlite,
+WebAssembly Postgres — no database server or Docker needed) with Neon's Data API roles
+and the `authenticated` / `anonymous` roles shimmed the way Neon's Data API uses them. It then acts
 as an owner, a manager, a member and a stranger and checks the rules actually hold:
 
 - a shared member can read a kesht but cannot rename it, delete it, mark payments, add or
@@ -118,7 +118,7 @@ as an owner, a manager, a member and a stranger and checks the rules actually ho
 
 Run it after any change to the SQL. It needs no credentials and touches nothing external.
 
-`supabase/verify.sql` is the same checks for the Supabase SQL editor, if you prefer to run
+`neon/verify.sql` is the same checks for the Neon SQL editor, if you prefer to run
 them against your own project. It has three parts:
 
 1. Structure — every table has row level security enabled and the expected policies.
@@ -148,15 +148,15 @@ single `save_kesht_bundle()` call, so a change is never half-applied.
 web/
   index.html            page shell (dir=rtl by default)
   vercel.json           SPA rewrite for Vercel
-  supabase/
-    0001_init.sql       tables, access rules, functions — paste into Supabase
+  neon/
+    0001_init.sql       tables, access rules, functions — paste into Neon
     verify.sql          checks for the access rules
   src/
     main.tsx            React entry
     App.tsx             routes, sign-in guard, theme variables
     styles.css          all styling (CSS variables per theme)
     components/         ui kit, tab bar, prize wheel
-    data/               Supabase client, store, row mappers, sharing API
+    data/               Neon client, store, row mappers, sharing API
     domain/             kesht rules engine + types (same as mobile)
     i18n/messages.ts    Dari/English text
     lib/                solar calendar, number/money formatting, palettes

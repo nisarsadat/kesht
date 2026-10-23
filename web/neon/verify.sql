@@ -1,7 +1,9 @@
 -- Kesht — checks for the access rules.
 --
--- Run this in the Supabase SQL editor after 0001_init.sql.
+-- Run this in the Neon SQL editor after 0001_init.sql.
 -- Part 1 runs as-is. Part 2 needs two real accounts (see the note there).
+-- Accounts live in neon_auth."user"; list them with:
+--   select id, email from neon_auth."user";
 
 -- ---------------------------------------------------------------------------
 -- Part 1 — structure: every table exists with row level security switched on.
@@ -41,20 +43,20 @@ select p.proname as function_name, p.prosecdef as security_definer
 -- ---------------------------------------------------------------------------
 -- Part 2 — behaviour: a shared member can read but cannot change.
 --
--- Create two accounts first (sign up twice through the app, or add users in
--- Authentication -> Users), then paste their ids here and run this block.
--- Everything is rolled back at the end, so it leaves no data behind.
+-- Create two accounts first (sign up twice through the app), then paste their
+-- ids here and run this block. Everything is rolled back at the end, so it
+-- leaves no data behind.
 --
 -- Replace these two values:
---   <OWNER_UUID>  the account that owns the kesht
---   <MEMBER_UUID> the account it is shared with
+--   <OWNER_ID>  the account that owns the kesht
+--   <MEMBER_ID> the account it is shared with
 -- ---------------------------------------------------------------------------
 
 /*
 begin;
 
 insert into public.keshts (id, user_id, name, monthly_amount, currency, start_year, start_month, status)
-values ('verify-kesht', '<OWNER_UUID>', 'verify', 1000, 'AFN', 1405, 1, 'draft');
+values ('verify-kesht', '<OWNER_ID>', 'verify', 1000, 'AFN', 1405, 1, 'draft');
 
 -- The trigger should have made the creator the owner.
 select count(*) as owner_rows from public.kesht_members
@@ -62,11 +64,11 @@ select count(*) as owner_rows from public.kesht_members
 -- expect 1
 
 insert into public.kesht_members (kesht_id, user_id, role)
-values ('verify-kesht', '<MEMBER_UUID>', 'member');
+values ('verify-kesht', '<MEMBER_ID>', 'member');
 
 -- Act as the member.
 set local role authenticated;
-set local request.jwt.claims = '{"sub":"<MEMBER_UUID>","email":"member@example.com"}';
+set local request.jwt.claims = '{"sub":"<MEMBER_ID>","email":"member@example.com"}';
 
 select count(*) as member_can_see from public.keshts where id = 'verify-kesht';
 -- expect 1  (read access works)

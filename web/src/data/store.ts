@@ -14,7 +14,7 @@ import {
 import type { Bundle, CreateKeshtInput, KeshtSummary, Language, MemberInput } from '../domain/types';
 import type { ThemeName } from '../lib/theme';
 import { assembleBundles, keshtPayload, memberPayload, paymentPayload, roundPayload } from './mappers';
-import { supabase } from './supabase';
+import { neon } from './neon';
 
 /**
  * The app's data store.
@@ -25,7 +25,7 @@ import { supabase } from './supabase';
  * change is.
  *
  * On the real database that means each change is applied locally first (so the
- * UI reacts immediately), then written to Supabase as one atomic call. If the
+ * UI reacts immediately), then written to Neon as one atomic call. If the
  * write fails, the store reloads from the server — the optimistic change
  * disappears and the reason is exposed through getLastError().
  *
@@ -44,7 +44,7 @@ export type Mode = 'cloud' | 'local';
 /**
  * What a signed-in account may do inside one kesht: the owner manages access
  * and everything else, a manager runs the kesht day to day, a member only
- * looks. The database enforces the same three roles (see supabase/).
+ * looks. The database enforces the same three roles (see neon/).
  */
 export type Role = 'owner' | 'manager' | 'member';
 
@@ -92,7 +92,7 @@ function reason(caught: unknown): string {
 }
 
 export class KeshtStore {
-  readonly mode: Mode = supabase ? 'cloud' : 'local';
+  readonly mode: Mode = neon ? 'cloud' : 'local';
 
   private bundles: Record<string, Bundle> = {};
   private roles: Record<string, Role> = {};
@@ -235,7 +235,7 @@ export class KeshtStore {
     this.lastError = null;
     this.emit();
     try {
-      const { error } = await supabase!.rpc('claim_pending_invites');
+      const { error } = await neon!.rpc('claim_pending_invites');
       if (error) throw error;
       await this.loadAll();
     } catch (caught) {
@@ -266,7 +266,7 @@ export class KeshtStore {
   }
 
   private async loadAll(): Promise<void> {
-    const client = supabase;
+    const client = neon;
     if (!client) return;
     // Row level security narrows every one of these to the keshts this account
     // belongs to, so there are no id lists to keep in step.
@@ -323,7 +323,7 @@ export class KeshtStore {
   // -------------------------------------------------------------------------
 
   private async saveBundle(bundle: Bundle): Promise<void> {
-    const client = supabase;
+    const client = neon;
     if (!client) return;
     const { error } = await client.rpc('save_kesht_bundle', {
       p_kesht: keshtPayload(bundle.kesht),
@@ -447,7 +447,7 @@ export class KeshtStore {
     if (this.mode !== 'cloud' || bundles.length === 0) return 0;
     let imported = 0;
     for (const bundle of bundles) {
-      const client = supabase;
+      const client = neon;
       if (!client) break;
       const { error } = await client.rpc('save_kesht_bundle', {
         p_kesht: keshtPayload(bundle.kesht),
