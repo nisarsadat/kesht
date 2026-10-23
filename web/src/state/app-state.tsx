@@ -69,27 +69,36 @@ type AppState = {
 
 const AppContext = createContext<AppState | null>(null);
 
+/** Convert authentication failures into readable messages. */
 function authMessageKey(message: string): MessageKey | null {
   const text = message.toLowerCase();
 
   if (
     text.includes('invalid login credentials') ||
     text.includes('invalid email or password')
-  ) return 'authInvalid';
+  ) {
+    return 'authInvalid';
+  }
 
   if (
     text.includes('already registered') ||
     text.includes('already been registered') ||
     text.includes('user already exists')
-  ) return 'authExists';
+  ) {
+    return 'authExists';
+  }
 
-  if (text.includes('email not confirmed')) return 'authUnconfirmed';
+  if (text.includes('email not confirmed')) {
+    return 'authUnconfirmed';
+  }
 
   if (
     text.includes('at least 6 characters') ||
     text.includes('password should be') ||
     text.includes('password too short')
-  ) return 'authWeakPassword';
+  ) {
+    return 'authWeakPassword';
+  }
 
   if (text.includes('rate limit') || text.includes('too many')) {
     return 'authRateLimited';
@@ -99,18 +108,24 @@ function authMessageKey(message: string): MessageKey | null {
     return 'emailInvalid';
   }
 
-  if (text.includes('not_authenticated')) return 'notAuthenticated';
+  if (text.includes('not_authenticated')) {
+    return 'notAuthenticated';
+  }
 
   if (
     text.includes('invalid token') ||
     text.includes('token has expired')
-  ) return 'resetInvalid';
+  ) {
+    return 'resetInvalid';
+  }
 
   if (
     text.includes('failed to fetch') ||
     text.includes('load failed') ||
     text.includes('network')
-  ) return 'networkError';
+  ) {
+    return 'networkError';
+  }
 
   return null;
 }
@@ -139,7 +154,7 @@ export function AppStateProvider({
   const language = store.getLanguage();
   const theme = store.getTheme();
 
-  // Initialize the session safely and always finish the loading state.
+  // Initialize the session safely.
   useEffect(() => {
     const client = neon;
 
@@ -148,11 +163,13 @@ export function AppStateProvider({
       return;
     }
 
+    // Preserve the non-null client for asynchronous callbacks.
+    const authClient = client;
     let active = true;
 
     async function initializeSession() {
       try {
-        const { data, error } = await client.auth.getSession();
+        const { data, error } = await authClient.auth.getSession();
 
         if (error) throw error;
 
@@ -175,7 +192,7 @@ export function AppStateProvider({
 
     void initializeSession();
 
-    const { data } = client.auth.onAuthStateChange(
+    const { data } = authClient.auth.onAuthStateChange(
       (_event, nextSession) => {
         if (!active) return;
 
@@ -237,9 +254,11 @@ export function AppStateProvider({
     () => ({
       setLanguage: (next: Language) => store.setLanguage(next),
       setTheme: (next: ThemeName) => store.setTheme(next),
+
       roleOf: (keshtId: string) => store.roleOf(keshtId),
       canEdit: (keshtId: string) => store.canEdit(keshtId),
       canManage: (keshtId: string) => store.canManage(keshtId),
+
       clearLastError: () => store.clearLastError(),
       dismissLocalImport: () => store.dismissLocalImport(),
       importLocalData: () => store.importLocalData(),
@@ -269,8 +288,7 @@ export function AppStateProvider({
           throw new Error(result.error.message);
         }
 
-        // Diagnostic check: determine whether the session is available
-        // immediately after the sign-in request succeeds.
+        // Diagnostic check: confirm a session is available after login.
         try {
           const sessionResult = await client.auth.getSession();
 
@@ -301,7 +319,9 @@ export function AppStateProvider({
       signUp: async (email: string, password: string) => {
         const client = neon;
 
-        if (!client) return { needsConfirmation: false };
+        if (!client) {
+          return { needsConfirmation: false };
+        }
 
         const displayName = email.split('@')[0] ?? email.trim();
 
@@ -356,38 +376,46 @@ export function AppStateProvider({
           token,
         });
 
-        if (error) throw new Error(error.message ?? String(error));
+        if (error) {
+          throw new Error(error.message ?? String(error));
+        }
       },
     }),
     [],
   );
 
-  const value = useMemo<AppState>(() => ({
-    ...helpers,
-    ...actions,
-    mode: store.mode,
-    configured: isCloudConfigured,
-    session,
-    authReady,
-    email: session?.user.email ?? null,
-    loadingData: !store.isLoaded(),
-    language,
-    direction: language === 'fa' ? 'rtl' : 'ltr',
-    theme,
-    colors: paletteFor(theme),
-    revision,
-    lastError: store.getLastError(),
-    hasLocalData: store.hasLocalData(),
-    localDataCount: store.localDataCount(),
-  }), [
-    helpers,
-    actions,
-    theme,
-    revision,
-    session,
-    authReady,
-    language,
-  ]);
+  const value = useMemo<AppState>(
+    () => ({
+      ...helpers,
+      ...actions,
+
+      mode: store.mode,
+      configured: isCloudConfigured,
+      session,
+      authReady,
+      email: session?.user.email ?? null,
+      loadingData: !store.isLoaded(),
+
+      language,
+      direction: language === 'fa' ? 'rtl' : 'ltr',
+      theme,
+      colors: paletteFor(theme),
+
+      revision,
+      lastError: store.getLastError(),
+      hasLocalData: store.hasLocalData(),
+      localDataCount: store.localDataCount(),
+    }),
+    [
+      helpers,
+      actions,
+      theme,
+      revision,
+      session,
+      authReady,
+      language,
+    ],
+  );
 
   return (
     <AppContext.Provider value={value}>
@@ -399,7 +427,9 @@ export function AppStateProvider({
 export function useApp(): AppState {
   const value = useContext(AppContext);
 
-  if (!value) throw new Error('AppStateProvider missing');
+  if (!value) {
+    throw new Error('AppStateProvider missing');
+  }
 
   return value;
 }
@@ -431,7 +461,9 @@ export function useRefreshOnFocus(): void {
 
   useEffect(() => {
     const onFocus = () => {
-      if (document.visibilityState === 'visible') refresh();
+      if (document.visibilityState === 'visible') {
+        refresh();
+      }
     };
 
     globalThis.addEventListener?.('focus', onFocus);
