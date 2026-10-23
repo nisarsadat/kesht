@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
+    "@neon/config": "^1.9.3",
+    "@neon/env": "^1.6.4",
     "@react-navigation/bottom-tabs": "^7.19.2",
     "babel-preset-expo": "~57.0.0",
     "expo": "~57.0.25",
