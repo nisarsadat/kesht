@@ -163,11 +163,13 @@ export function AppStateProvider({
       return;
     }
 
+    // Keep a narrowed, non-null client for the async function.
+    const authClient = client;
     let active = true;
 
     async function initializeSession() {
       try {
-        const { data, error } = await client.auth.getSession();
+        const { data, error } = await authClient.auth.getSession();
 
         if (error) throw error;
         if (!active) return;
@@ -188,7 +190,7 @@ export function AppStateProvider({
 
     void initializeSession();
 
-    const { data } = client.auth.onAuthStateChange(
+    const { data } = authClient.auth.onAuthStateChange(
       (_event, nextSession) => {
         if (!active) return;
 
@@ -286,7 +288,6 @@ export function AppStateProvider({
             '[Auth] Sign-in request failed:',
             caught,
           );
-
           throw caught;
         }
 
@@ -307,8 +308,8 @@ export function AppStateProvider({
           );
         }
 
-        // The auth-state listener updates React session state.
-        // Do not immediately request the session a second time here.
+        // AppStateProvider listens for authentication state changes.
+        // Avoid making an immediate second getSession() request here.
       },
 
       signUp: async (email: string, password: string) => {
