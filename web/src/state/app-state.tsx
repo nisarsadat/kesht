@@ -27,7 +27,6 @@ import {
 } from '../i18n/messages';
 import { paletteFor, type Palette, type ThemeName } from '../lib/theme';
 
-/** Minimal session shape the UI needs. */
 type Session = { user: { id: string; email?: string | null } } | null;
 
 type AppState = {
@@ -69,7 +68,6 @@ type AppState = {
 
 const AppContext = createContext<AppState | null>(null);
 
-/** Convert authentication failures into readable messages. */
 function authMessageKey(message: string): MessageKey | null {
   const text = message.toLowerCase();
 
@@ -104,7 +102,10 @@ function authMessageKey(message: string): MessageKey | null {
     return 'authRateLimited';
   }
 
-  if (text.includes('invalid format') || text.includes('invalid email')) {
+  if (
+    text.includes('invalid format') ||
+    text.includes('invalid email')
+  ) {
     return 'emailInvalid';
   }
 
@@ -154,7 +155,6 @@ export function AppStateProvider({
   const language = store.getLanguage();
   const theme = store.getTheme();
 
-  // Initialize the session safely.
   useEffect(() => {
     const client = neon;
 
@@ -163,16 +163,13 @@ export function AppStateProvider({
       return;
     }
 
-    // Preserve the non-null client for asynchronous callbacks.
-    const authClient = client;
     let active = true;
 
     async function initializeSession() {
       try {
-        const { data, error } = await authClient.auth.getSession();
+        const { data, error } = await client.auth.getSession();
 
         if (error) throw error;
-
         if (!active) return;
 
         setSession(data.session ?? null);
@@ -183,7 +180,6 @@ export function AppStateProvider({
         );
 
         if (!active) return;
-
         setSession(null);
       } finally {
         if (active) setAuthReady(true);
@@ -192,7 +188,7 @@ export function AppStateProvider({
 
     void initializeSession();
 
-    const { data } = authClient.auth.onAuthStateChange(
+    const { data } = client.auth.onAuthStateChange(
       (_event, nextSession) => {
         if (!active) return;
 
@@ -207,7 +203,6 @@ export function AppStateProvider({
     };
   }, []);
 
-  // Attach the authenticated user to the data store.
   useEffect(() => {
     if (!neon) return;
 
@@ -253,15 +248,21 @@ export function AppStateProvider({
   const actions = useMemo(
     () => ({
       setLanguage: (next: Language) => store.setLanguage(next),
+
       setTheme: (next: ThemeName) => store.setTheme(next),
 
       roleOf: (keshtId: string) => store.roleOf(keshtId),
+
       canEdit: (keshtId: string) => store.canEdit(keshtId),
+
       canManage: (keshtId: string) => store.canManage(keshtId),
 
       clearLastError: () => store.clearLastError(),
+
       dismissLocalImport: () => store.dismissLocalImport(),
+
       importLocalData: () => store.importLocalData(),
+
       refresh: () => store.refresh(),
 
       signIn: async (email: string, password: string) => {
@@ -273,14 +274,26 @@ export function AppStateProvider({
 
         console.info('[Auth] Starting sign-in');
 
-        const result = await client.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
+        let result;
 
-        console.info('[Auth] Sign-in response', {
+        try {
+          result = await client.auth.signInWithPassword({
+            email: email.trim(),
+            password,
+          });
+        } catch (caught) {
+          console.error(
+            '[Auth] Sign-in request failed:',
+            caught,
+          );
+
+          throw caught;
+        }
+
+        console.info('[Auth] Sign-in response:', {
           hasError: Boolean(result.error),
           hasSession: Boolean(result.data?.session),
+          errorMessage: result.error?.message ?? null,
         });
 
         if (result.error) {
@@ -288,32 +301,14 @@ export function AppStateProvider({
           throw new Error(result.error.message);
         }
 
-        // Diagnostic check: confirm a session is available after login.
-        try {
-          const sessionResult = await client.auth.getSession();
-
-          console.info('[Auth] Session check', {
-            hasError: Boolean(sessionResult.error),
-            hasSession: Boolean(sessionResult.data?.session),
-          });
-
-          if (sessionResult.error) {
-            throw sessionResult.error;
-          }
-
-          if (!sessionResult.data?.session) {
-            throw new Error(
-              'Login succeeded, but no session was found.',
-            );
-          }
-        } catch (caught) {
-          console.error(
-            '[Auth] Session retrieval after sign-in failed:',
-            caught,
+        if (!result.data?.session) {
+          throw new Error(
+            'Sign-in returned successfully, but no session was returned.',
           );
-
-          throw caught;
         }
+
+        // The auth-state listener updates React session state.
+        // Do not immediately request the session a second time here.
       },
 
       signUp: async (email: string, password: string) => {
@@ -388,19 +383,16 @@ export function AppStateProvider({
     () => ({
       ...helpers,
       ...actions,
-
       mode: store.mode,
       configured: isCloudConfigured,
       session,
       authReady,
       email: session?.user.email ?? null,
       loadingData: !store.isLoaded(),
-
       language,
       direction: language === 'fa' ? 'rtl' : 'ltr',
       theme,
       colors: paletteFor(theme),
-
       revision,
       lastError: store.getLastError(),
       hasLocalData: store.hasLocalData(),
@@ -434,7 +426,6 @@ export function useApp(): AppState {
   return value;
 }
 
-/** Live view of one kesht, re-read on every store change. */
 export function useBundle(
   keshtId: string | undefined,
 ): Bundle | null {
@@ -446,14 +437,15 @@ export function useBundle(
   );
 }
 
-/** Live view of the kesht list. */
 export function useSummaries(): KeshtSummary[] {
   const { revision } = useApp();
 
-  return useMemo(() => store.listKeshts(), [revision]);
+  return useMemo(
+    () => store.listKeshts(),
+    [revision],
+  );
 }
 
-/** Re-reads the store whenever the window regains focus. */
 export function useRefreshOnFocus(): void {
   const refresh = useCallback(() => {
     void store.refresh();
