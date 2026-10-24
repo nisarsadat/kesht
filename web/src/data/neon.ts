@@ -1,19 +1,18 @@
 
 import { createClient, SupabaseAuthAdapter } from '@neondatabase/neon-js';
 
-const authUrl =
-  (import.meta.env.VITE_NEON_AUTH_URL as string | undefined)?.trim() ?? '';
+const authUrl = `${window.location.origin}/api/auth`;
 
 const dataApiUrl =
   (import.meta.env.VITE_NEON_DATA_API_URL as string | undefined)?.trim() ?? '';
 
 /** True when both environment variables are present. */
-export const isCloudConfigured =
-  authUrl.length > 0 && dataApiUrl.length > 0;
+export const isCloudConfigured = dataApiUrl.length > 0;
 
 /**
  * Neon client.
- * Without credentials, the application falls back to local development mode.
+ * Auth requests go through the same-origin Vercel proxy.
+ * Data API requests continue to use Neon directly.
  */
 export const neon = isCloudConfigured
   ? createClient({
