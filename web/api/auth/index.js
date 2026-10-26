@@ -60,6 +60,44 @@ function appendCookies(res, cookies) {
   }
 }
 
+function pathFromValue(value) {
+  if (Array.isArray(value) && value.length) {
+    return value.filter(Boolean).join('/');
+  }
+
+  if (typeof value === 'string' && value.length) {
+    return value.replace(/^\/+/, '');
+  }
+
+  return null;
+}
+
+/**
+ * Resolve the Neon Auth path after Vercel rewrites /api/auth/:path* → /api/auth.
+ * Prefer the rewrite query param; fall back to original URI / pathname.
+ */
+function getProxyPath(req, url) {
+  const fromQuery =
+    pathFromValue(req.query?.path) ??
+    pathFromValue(req.query?.['...path']);
+
+  if (fromQuery !== null) return fromQuery;
+
+  const forwarded = req.headers['x-forwarded-uri'] || req.headers['x-invoke-path'];
+  const forwardedPath =
+    typeof forwarded === 'string' ? forwarded.split('?')[0] : null;
+
+  for (const candidate of [forwardedPath, url.pathname]) {
+    if (!candidate) continue;
+    const prefix = '/api/auth/';
+    if (candidate.startsWith(prefix)) {
+      return candidate.slice(prefix.length);
+    }
+  }
+
+  return null;
+}
+
 export default async function handler(req, res) {
   const baseUrl = process.env.NEON_AUTH_BASE_URL;
   const cookieSecret = process.env.NEON_AUTH_COOKIE_SECRET;
@@ -80,13 +118,11 @@ export default async function handler(req, res) {
       ?.trim() || 'https';
     const url = new URL(req.url || '/', `${proto}://${host}`);
 
-    const prefix = '/api/auth/';
+    const path = getProxyPath(req, url);
 
-    if (!url.pathname.startsWith(prefix)) {
+    if (path === null) {
       return res.status(404).json({ error: 'Invalid authentication route.' });
     }
-
-    const path = url.pathname.slice(prefix.length);
 
     const headers = new Headers();
 
@@ -112,7 +148,20 @@ export default async function handler(req, res) {
       }
     }
 
-    const request = new Request(url, {
+    // Keep the original client path so Origin/cookie logic stays correct.
+    // Drop the rewrite-only `path` query param before proxying upstream.
+    const upstreamSearch = new URLSearchParams(url.search);
+    upstreamSearch.delete('path');
+    upstreamSearch.delete('...path');
+    const search = upstreamSearch.toString();
+    const requestUrl = new URL(
+      path
+        ? `/api/auth/${path}${search ? `?${search}` : ''}`
+        : `/api/auth${search ? `?${search}` : ''}`,
+      `${proto}://${host}`,
+    );
+
+    const request = new Request(requestUrl, {
       method: req.method,
       headers,
       ...(body ? { body, duplex: 'half' } : {}),
