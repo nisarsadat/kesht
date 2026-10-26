@@ -87,8 +87,57 @@ function readPrefs(): Prefs {
 }
 
 function reason(caught: unknown): string {
-  if (caught instanceof Error) return caught.message;
-  return String(caught);
+  if (caught instanceof Error) {
+    return caught.message || caught.name || 'Unknown error';
+  }
+
+  if (typeof caught === 'string') {
+    return caught || 'Unknown error';
+  }
+
+  if (caught && typeof caught === 'object') {
+    const record = caught as Record<string, unknown>;
+
+    if (typeof record.message === 'string' && record.message) {
+      return record.message;
+    }
+
+    // Nested message objects (some Neon / PostgREST payloads).
+    if (record.message && typeof record.message === 'object') {
+      const nested = reason(record.message);
+      if (nested !== 'Unknown error') return nested;
+    }
+
+    if (typeof record.details === 'string' && record.details) {
+      return record.details;
+    }
+
+    if (typeof record.hint === 'string' && record.hint) {
+      return record.hint;
+    }
+
+    if (typeof record.error === 'string' && record.error) {
+      return record.error;
+    }
+
+    if (typeof record.code === 'string' && record.code) {
+      return record.code;
+    }
+
+    try {
+      const json = JSON.stringify(caught);
+      if (json && json !== '{}' && json !== 'null') return json;
+    } catch {
+      // fall through
+    }
+
+    return 'Unknown error';
+  }
+
+  if (caught == null) return 'Unknown error';
+
+  const text = String(caught);
+  return text === '[object Object]' ? 'Unknown error' : text;
 }
 
 export class KeshtStore {
@@ -162,8 +211,8 @@ export class KeshtStore {
     }
   }
 
-  private fail(message: string): void {
-    this.lastError = message;
+  private fail(message: unknown): void {
+    this.lastError = reason(message);
     this.emit();
   }
 
@@ -332,7 +381,7 @@ export class KeshtStore {
       p_payments: bundle.payments.map(paymentPayload),
     });
     if (!error) return;
-    this.fail(error.message);
+    this.fail(reason(error));
     // Drop the optimistic change so the screen matches the database again.
     await this.refresh();
   }
@@ -456,7 +505,7 @@ export class KeshtStore {
         p_payments: bundle.payments.map(paymentPayload),
       });
       if (error) {
-        this.fail(error.message);
+        this.fail(reason(error));
         break;
       }
       imported += 1;
