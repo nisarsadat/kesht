@@ -70,7 +70,9 @@ export function Screen({
   const body = (
     <>
       <div className={inTabs ? 'content with-tabs' : 'content'}>{children}</div>
-      {footer ? <div className="footer">{footer}</div> : null}
+      {footer ? (
+        <div className={inTabs ? 'footer with-tabs' : 'footer'}>{footer}</div>
+      ) : null}
     </>
   );
 
@@ -108,12 +110,13 @@ export function Screen({
           </button>
         </div>
       </header>
+      {/* Always use page-form flex so the footer stays pinned to the bottom. */}
       {form ? (
         <form id={form.id} className="page-form" onSubmit={form.onSubmit}>
           {body}
         </form>
       ) : (
-        body
+        <div className="page-form">{body}</div>
       )}
     </div>
   );

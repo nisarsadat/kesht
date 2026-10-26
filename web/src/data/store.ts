@@ -141,6 +141,18 @@ function reason(caught: unknown): string {
   return text === '[object Object]' ? 'Unknown error' : text;
 }
 
+function isAuthTokenError(caught: unknown): boolean {
+  const text = reason(caught).toLowerCase();
+  return (
+    text.includes('authentication required') ||
+    text.includes('valid token') ||
+    text.includes('not a valid jwt') ||
+    text.includes('jwt') ||
+    text.includes('unauthorized') ||
+    text.includes('not_authenticated')
+  );
+}
+
 export class KeshtStore {
   readonly mode: Mode = neon ? 'cloud' : 'local';
 
@@ -382,13 +394,28 @@ export class KeshtStore {
   private async saveBundle(bundle: Bundle): Promise<void> {
     const client = neon;
     if (!client) return;
-    const { error } = await client.rpc('save_kesht_bundle', {
-      p_kesht: keshtPayload(bundle.kesht),
-      p_members: bundle.members.map(memberPayload),
-      p_rounds: bundle.rounds.map(roundPayload),
-      p_payments: bundle.payments.map(paymentPayload),
-    });
-    if (!error) return;
+
+    const write = () =>
+      client.rpc('save_kesht_bundle', {
+        p_kesht: keshtPayload(bundle.kesht),
+        p_members: bundle.members.map(memberPayload),
+        p_rounds: bundle.rounds.map(roundPayload),
+        p_payments: bundle.payments.map(paymentPayload),
+      });
+
+    let { error } = await write();
+
+    // iOS often drops the JWT mid-session; refresh once and retry.
+    if (error && isAuthTokenError(error)) {
+      await client.auth.getSession({ forceFetch: true });
+      ({ error } = await write());
+    }
+
+    if (!error) {
+      this.clearLastError();
+      return;
+    }
+
     this.fail(reason(error));
     // Drop the optimistic change so the screen matches the database again.
     await this.refresh();

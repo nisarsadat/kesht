@@ -217,6 +217,14 @@ textarea:focus-visible {
   border-top: 1px solid var(--line);
 }
 
+.footer.with-tabs {
+  padding-bottom: 10px;
+}
+
+.content.with-tabs {
+  padding-bottom: 8px;
+}
+
 .row {
   display: flex;
   gap: 8px;
@@ -704,6 +712,181 @@ textarea:focus-visible {
   background: var(--green);
   border-color: var(--green);
   color: var(--on-green);
+}
+
+/* ---------- this-month payments ---------- */
+
+.month-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--line);
+  background: var(--card);
+  box-shadow: 0 10px 24px -18px var(--shadow-strong);
+}
+
+.month-summary-date {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.month-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.month-summary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 8px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  text-align: center;
+}
+
+.month-summary-value {
+  font-size: 14px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.month-summary-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.month-recipient-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.month-list-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.month-list-hint {
+  margin-top: -6px;
+}
+
+.text-action {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--green);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.pay-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pay-row {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: transform 0.14s var(--ease-out), border-color 0.14s ease, background 0.14s ease;
+}
+
+.pay-row:disabled,
+.pay-row.readonly {
+  cursor: default;
+  opacity: 1;
+}
+
+.pay-row:not(:disabled):active {
+  transform: scale(0.985);
+}
+
+.pay-row.paid {
+  border-color: color-mix(in srgb, var(--green) 45%, var(--line));
+  background: color-mix(in srgb, var(--green-soft) 55%, var(--card));
+}
+
+.pay-avatar {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+  color: var(--accent);
+}
+
+.pay-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pay-name {
+  font-size: 16px;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pay-meta {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pay-status {
+  flex: 0 0 auto;
+  max-width: 42%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  text-align: center;
+}
+
+.pay-status.is-paid {
+  color: var(--on-green);
+  background: var(--green);
 }
 
 .pick-row {

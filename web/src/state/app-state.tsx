@@ -454,11 +454,18 @@ export function AppStateProvider({
       signOut: async () => {
         const client = neon;
 
-        if (!client) return;
+        if (!client) {
+          applySession.current(null);
+          return;
+        }
 
-        const { error } = await client.auth.signOut();
-
-        if (error) throw new Error(error.message);
+        try {
+          const { error } = await client.auth.signOut();
+          if (error) throw new Error(error.message);
+        } finally {
+          // Same-tab auth events are ignored by the SDK; clear UI session here.
+          applySession.current(null);
+        }
       },
 
       sendPasswordReset: async (email: string) => {

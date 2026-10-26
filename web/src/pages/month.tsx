@@ -2,12 +2,16 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ConfirmDialog } from '../components/confirm-dialog';
 import { notify } from '../components/toasts';
-import { Button, Card, Screen } from '../components/ui';
+import { Button, Screen } from '../components/ui';
 import { store } from '../data/store';
 import { collectedAmount, receivedMemberIds } from '../domain/rules';
-import { formatMoney, formatMonth } from '../lib/format';
+import { formatMoney, formatMonth, localizeNumber } from '../lib/format';
 import type { MessageKey } from '../i18n/messages';
 import { useApp, useBundle } from '../state/app-state';
+
+function initial(name: string): string {
+  return name.trim().charAt(0) || '؟';
+}
 
 export function MonthPage() {
   const { id } = useParams<{ id: string }>();
@@ -21,7 +25,6 @@ export function MonthPage() {
   const keshtId = bundle.kesht.id;
   const editable = canEdit(keshtId);
 
-  /** Runs a store change and reports either the failure or what happened. */
   function run(action: () => void, fallback: 'round_not_open', done?: MessageKey): void {
     setError('');
     try {
@@ -47,6 +50,9 @@ export function MonthPage() {
   const received = receivedMemberIds(bundle);
   const recipient = bundle.members.find((member) => member.id === round.recipientMemberId);
   const unpaid = payments.some((payment) => !payment.paid);
+  const paidCount = payments.filter((payment) => payment.paid).length;
+  const collected = collectedAmount(bundle, round.id);
+  const expected = bundle.members.length * bundle.kesht.monthlyAmount;
 
   return (
     <Screen
@@ -64,6 +70,7 @@ export function MonthPage() {
             />
             <Button
               label={t('payOut')}
+              tone="ghost"
               onClick={() => {
                 if (round.recipientMemberId) setConfirming(true);
               }}
@@ -75,76 +82,85 @@ export function MonthPage() {
     >
       {editable ? null : <span className="muted">{t('readOnly')}</span>}
 
-      <Card>
-        <span className="strong">{formatMonth(round.year, round.month, language)}</span>
-        <span className="muted">
-          {t('expectedPot')}:{' '}
-          {formatMoney(bundle.members.length * bundle.kesht.monthlyAmount, language)}
+      <section className="month-summary" aria-label={t('tabMonth')}>
+        <span className="month-summary-date">
+          {formatMonth(round.year, round.month, language)}
         </span>
-        <span className="amount">
-          {t('collected')}: {formatMoney(collectedAmount(bundle, round.id), language)}
-        </span>
-        <span>
-          {t('receives')}: {recipient?.name ?? t('none')}
-        </span>
-        {!recipient ? (
-          <span className="muted">{t('pickWinnerOnSpin')}</span>
-        ) : null}
-      </Card>
-
-      {editable ? (
-        <div className="row">
-          <Button
-            label={t('markAllPaid')}
-            tone="ghost"
-            small
-            onClick={() =>
-              run(() => store.setAllPaid(keshtId, true), 'round_not_open', 'notifyAllPaid')
-            }
-          />
-          <Button
-            label={t('clearPaid')}
-            tone="ghost"
-            small
-            onClick={() => setConfirmingClear(true)}
-          />
+        <div className="month-summary-grid">
+          <div className="month-summary-stat">
+            <span className="month-summary-value">{formatMoney(collected, language)}</span>
+            <span className="month-summary-label">{t('collected')}</span>
+          </div>
+          <div className="month-summary-stat">
+            <span className="month-summary-value">{formatMoney(expected, language)}</span>
+            <span className="month-summary-label">{t('expectedPot')}</span>
+          </div>
+          <div className="month-summary-stat">
+            <span className="month-summary-value">
+              {localizeNumber(paidCount, language)}/{localizeNumber(payments.length, language)}
+            </span>
+            <span className="month-summary-label">{t('paid')}</span>
+          </div>
         </div>
-      ) : null}
+        <div className="month-recipient-line">
+          <span className="muted">{t('receives')}</span>
+          <span className="strong">{recipient?.name ?? t('none')}</span>
+        </div>
+        {!recipient ? <span className="muted">{t('pickWinnerOnSpin')}</span> : null}
+      </section>
 
-      <span className="strong">{t('collectMoney')}</span>
-      <span className="muted">{t('monthCollectHint')}</span>
-
-      {payments.map((payment) => {
-        const member = bundle.members.find((item) => item.id === payment.memberId);
-        const already = member ? received.has(member.id) : false;
-        return (
-          <Card
-            key={payment.id}
-            onClick={
-              editable
-                ? () =>
-                    run(
-                      () => store.setPaid(keshtId, payment.id, !payment.paid),
-                      'round_not_open',
-                      payment.paid ? 'notifyMarkedUnpaid' : 'notifyMarkedPaid',
-                    )
-                : undefined
-            }
+      <div className="month-list-head">
+        <span className="strong">{t('monthPayList')}</span>
+        {editable ? (
+          <button
+            type="button"
+            className="text-action"
+            onClick={() => setConfirmingClear(true)}
           >
-            <div className="spread">
-              <span className="strong">{member?.name}</span>
-              <span className={payment.paid ? 'amount' : 'muted'}>
-                {payment.paid ? t('paid') : t('notPaid')}
-              </span>
-            </div>
-            {already ? (
-              <span className="gold">
-                {t('alreadyReceived')} — {t('stillPays')}
-              </span>
-            ) : null}
-          </Card>
-        );
-      })}
+            {t('clearPaid')}
+          </button>
+        ) : null}
+      </div>
+      <span className="muted month-list-hint">{t('monthCollectHint')}</span>
+
+      <ul className="pay-list">
+        {payments.map((payment) => {
+          const member = bundle.members.find((item) => item.id === payment.memberId);
+          const name = member?.name ?? t('none');
+          const already = member ? received.has(member.id) : false;
+          return (
+            <li key={payment.id}>
+              <button
+                type="button"
+                className={`pay-row${payment.paid ? ' paid' : ''}${editable ? '' : ' readonly'}`}
+                disabled={!editable}
+                aria-pressed={payment.paid}
+                onClick={() =>
+                  run(
+                    () => store.setPaid(keshtId, payment.id, !payment.paid),
+                    'round_not_open',
+                    payment.paid ? 'notifyMarkedUnpaid' : 'notifyMarkedPaid',
+                  )
+                }
+              >
+                <span className="pay-avatar" aria-hidden="true">
+                  {initial(name)}
+                </span>
+                <span className="pay-main">
+                  <span className="pay-name">{name}</span>
+                  <span className="pay-meta">
+                    {formatMoney(payment.amount, language)}
+                    {already ? ` · ${t('alreadyReceived')}` : ''}
+                  </span>
+                </span>
+                <span className={`pay-status${payment.paid ? ' is-paid' : ''}`}>
+                  {payment.paid ? t('paid') : t('notPaid')}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
 
       {editable && confirming ? (
         <ConfirmDialog
