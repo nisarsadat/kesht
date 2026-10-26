@@ -328,6 +328,22 @@ export function setRecipient(bundle: Bundle, memberId: string, now: string): Bun
   };
 }
 
+/** Clears the open month recipient so the group can spin again. */
+export function clearRecipient(bundle: Bundle, now: string): Bundle {
+  if (bundle.kesht.status !== 'active') throw new KeshtRuleError('not_active');
+  const current = openRound(bundle);
+  if (!current) throw new KeshtRuleError('round_not_open');
+  if (!current.recipientMemberId) return bundle;
+  return {
+    ...bundle,
+    rounds: bundle.rounds.map((round) =>
+      round.id === current.id
+        ? { ...round, recipientMemberId: null, updatedAt: now }
+        : round,
+    ),
+  };
+}
+
 export function closeRound(bundle: Bundle, now: string, makeId: () => string): Bundle {
   if (bundle.kesht.status !== 'active') throw new KeshtRuleError('not_active');
   const current = openRound(bundle);

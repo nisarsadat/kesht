@@ -28,34 +28,39 @@ function makePieces(): Piece[] {
 }
 
 /**
- * The celebration shown the moment a recipient is drawn. It is a blocking
- * dialog over the whole viewport, so the winner is impossible to miss, and it
- * carries a short confetti burst plus the name animation. Motion is decorative:
- * the name and the close button stay visible even when motion is reduced.
+ * Celebration when a recipient is drawn. Pay closes the month for this winner,
+ * Respin clears the pick so the wheel can run again, and × only dismisses.
  */
 export function WinnerDialog({
   name,
   kicker,
   amount,
   amountLabel,
+  payLabel,
+  respinLabel,
   closeLabel,
+  onPay,
+  onRespin,
   onClose,
 }: {
   name: string;
   kicker: string;
   amount?: string;
   amountLabel?: string;
+  payLabel: string;
+  respinLabel: string;
   closeLabel: string;
+  onPay: () => void;
+  onRespin: () => void;
   onClose: () => void;
 }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  // Kept in a ref so a re-render does not re-focus the button and steal focus.
+  const payRef = useRef<HTMLButtonElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
   const [pieces] = useState(makePieces);
 
   useEffect(() => {
-    closeRef.current?.focus();
+    payRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -75,9 +80,15 @@ export function WinnerDialog({
         aria-label={`${kicker}: ${name}`}
         onClick={(event) => event.stopPropagation()}
       >
-        {/* Decoration is clipped inside this layer, so the dialog itself never
-            gets its own scroll box (an `overflow: hidden` dialog can be scrolled
-            out of place when something inside it takes focus). */}
+        <button
+          type="button"
+          className="winner-x"
+          aria-label={closeLabel}
+          onClick={onClose}
+        >
+          ×
+        </button>
+
         <span className="winner-confetti" aria-hidden="true">
           <span className="winner-glow" />
           {pieces.map((piece) => (
@@ -103,9 +114,23 @@ export function WinnerDialog({
         <span className="winner-name">{name}</span>
         {amount && amountLabel ? <span className="winner-amount">{`${amountLabel}: ${amount}`}</span> : null}
 
-        <button ref={closeRef} type="button" className="button winner-close" onClick={onClose}>
-          {closeLabel}
-        </button>
+        <div className="winner-actions">
+          <button
+            ref={payRef}
+            type="button"
+            className="button winner-pay"
+            onClick={onPay}
+          >
+            {payLabel}
+          </button>
+          <button
+            type="button"
+            className="button ghost winner-respin"
+            onClick={onRespin}
+          >
+            {respinLabel}
+          </button>
+        </div>
       </div>
     </div>
   );

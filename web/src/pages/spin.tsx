@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { PrizeWheel } from '../components/prize-wheel';
 import { WinnerDialog } from '../components/winner-dialog';
 import { Button, Card, Screen } from '../components/ui';
+import { notify } from '../components/toasts';
 import { store } from '../data/store';
 import { eligibleRecipients } from '../domain/rules';
 import { formatMoney, localizeNumber } from '../lib/format';
@@ -15,9 +16,12 @@ function initial(name: string): string {
 export function SpinPage() {
   const { id } = useParams<{ id: string }>();
   const bundle = useBundle(id);
+  const navigate = useNavigate();
   const { t, language, errorFrom, canEdit } = useApp();
   const [error, setError] = useState('');
-  const [winner, setWinner] = useState<string | null>(null);
+  const [winner, setWinner] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const [manualId, setManualId] = useState<string | null>(null);
 
   if (!bundle) return null;
@@ -26,7 +30,9 @@ export function SpinPage() {
   const editable = canEdit(keshtId);
   const round = bundle.rounds.find((item) => item.status === 'open') ?? null;
   const eligible = eligibleRecipients(bundle);
-  const currentRecipient = bundle.members.find((member) => member.id === round?.recipientMemberId);
+  const currentRecipient = bundle.members.find(
+    (member) => member.id === round?.recipientMemberId,
+  );
   const pot = bundle.kesht.monthlyAmount * bundle.members.length;
 
   /** Records the recipient and celebrates the name on a popup. */
@@ -34,7 +40,30 @@ export function SpinPage() {
     setError('');
     try {
       store.setRecipient(keshtId, memberId);
-      setWinner(name);
+      setWinner({ id: memberId, name });
+    } catch (caught) {
+      setError(errorFrom(caught, 'round_not_open'));
+    }
+  }
+
+  function payWinner(): void {
+    setError('');
+    try {
+      store.closeRound(keshtId);
+      setWinner(null);
+      notify(t('notifyMonthClosed'));
+      navigate(`/k/${keshtId}/month`);
+    } catch (caught) {
+      setError(errorFrom(caught, 'round_not_open'));
+    }
+  }
+
+  function respin(): void {
+    setError('');
+    try {
+      store.clearRecipient(keshtId);
+      setWinner(null);
+      setManualId(null);
     } catch (caught) {
       setError(errorFrom(caught, 'round_not_open'));
     }
@@ -43,13 +72,15 @@ export function SpinPage() {
   if (!round) {
     return (
       <Screen title={t('tabSpin')} inTabs backTo={`/k/${keshtId}`}>
-        <span className="muted">{bundle.kesht.status === 'completed' ? t('completedBody') : t('noOpenMonth')}</span>
+        <span className="muted">
+          {bundle.kesht.status === 'completed'
+            ? t('completedBody')
+            : t('noOpenMonth')}
+        </span>
       </Screen>
     );
   }
 
-  /* Someone this kesht was shared with can see who receives, but only the
-   * owner draws the name or gives it to somebody specific. */
   if (!editable) {
     return (
       <Screen title={t('tabSpin')} inTabs backTo={`/k/${keshtId}`}>
@@ -90,12 +121,16 @@ export function SpinPage() {
         />
         <div className="spin-stats">
           <div className="spin-stat">
-            <span className="spin-stat-value">{localizeNumber(eligible.length, language)}</span>
+            <span className="spin-stat-value">
+              {localizeNumber(eligible.length, language)}
+            </span>
             <span className="spin-stat-label">{t('spinEligibleLabel')}</span>
           </div>
           <span className="spin-stats-div" aria-hidden="true" />
           <div className="spin-stat">
-            <span className="spin-stat-value">{formatMoney(pot, language)}</span>
+            <span className="spin-stat-value">
+              {formatMoney(pot, language)}
+            </span>
             <span className="spin-stat-label">{t('spinPotLabel')}</span>
           </div>
         </div>
@@ -146,11 +181,15 @@ export function SpinPage() {
 
       {winner ? (
         <WinnerDialog
-          name={winner}
+          name={winner.name}
           kicker={t('spinResult')}
           amountLabel={t('spinPotLabel')}
           amount={formatMoney(pot, language)}
+          payLabel={t('payOut')}
+          respinLabel={t('spinAgain')}
           closeLabel={t('close')}
+          onPay={payWinner}
+          onRespin={respin}
           onClose={() => setWinner(null)}
         />
       ) : null}

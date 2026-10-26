@@ -1184,9 +1184,34 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
-.winner-close {
+.winner-x {
+  position: absolute;
+  top: 8px;
+  inset-inline-end: 10px;
+  z-index: 2;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.winner-actions {
   position: relative;
-  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 14px;
+}
+
+.winner-pay,
+.winner-respin {
+  width: 100%;
 }
 
 /* ---------- account, sharing and status ---------- */

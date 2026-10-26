@@ -4,7 +4,7 @@ import { ConfirmDialog } from '../components/confirm-dialog';
 import { notify } from '../components/toasts';
 import { Button, Card, Screen } from '../components/ui';
 import { store } from '../data/store';
-import { collectedAmount, eligibleRecipients, receivedMemberIds } from '../domain/rules';
+import { collectedAmount, receivedMemberIds } from '../domain/rules';
 import { formatMoney, formatMonth } from '../lib/format';
 import type { MessageKey } from '../i18n/messages';
 import { useApp, useBundle } from '../state/app-state';
@@ -36,17 +36,17 @@ export function MonthPage() {
   if (!round) {
     return (
       <Screen title={t('tabMonth')} inTabs backTo={`/k/${keshtId}`}>
-        <span className="muted">{bundle.kesht.status === 'completed' ? t('completedBody') : t('noOpenMonth')}</span>
+        <span className="muted">
+          {bundle.kesht.status === 'completed' ? t('completedBody') : t('noOpenMonth')}
+        </span>
       </Screen>
     );
   }
 
   const payments = bundle.payments.filter((payment) => payment.roundId === round.id);
   const received = receivedMemberIds(bundle);
-  const eligible = eligibleRecipients(bundle);
   const recipient = bundle.members.find((member) => member.id === round.recipientMemberId);
   const unpaid = payments.some((payment) => !payment.paid);
-  const nextId = eligible[0]?.id;
 
   return (
     <Screen
@@ -58,7 +58,9 @@ export function MonthPage() {
           <>
             <Button
               label={t('collectMoney')}
-              onClick={() => run(() => store.setAllPaid(keshtId, true), 'round_not_open', 'notifyAllPaid')}
+              onClick={() =>
+                run(() => store.setAllPaid(keshtId, true), 'round_not_open', 'notifyAllPaid')
+              }
             />
             <Button
               label={t('payOut')}
@@ -76,7 +78,8 @@ export function MonthPage() {
       <Card>
         <span className="strong">{formatMonth(round.year, round.month, language)}</span>
         <span className="muted">
-          {t('expectedPot')}: {formatMoney(bundle.members.length * bundle.kesht.monthlyAmount, language)}
+          {t('expectedPot')}:{' '}
+          {formatMoney(bundle.members.length * bundle.kesht.monthlyAmount, language)}
         </span>
         <span className="amount">
           {t('collected')}: {formatMoney(collectedAmount(bundle, round.id), language)}
@@ -84,6 +87,9 @@ export function MonthPage() {
         <span>
           {t('receives')}: {recipient?.name ?? t('none')}
         </span>
+        {!recipient ? (
+          <span className="muted">{t('pickWinnerOnSpin')}</span>
+        ) : null}
       </Card>
 
       {editable ? (
@@ -92,11 +98,21 @@ export function MonthPage() {
             label={t('markAllPaid')}
             tone="ghost"
             small
-            onClick={() => run(() => store.setAllPaid(keshtId, true), 'round_not_open', 'notifyAllPaid')}
+            onClick={() =>
+              run(() => store.setAllPaid(keshtId, true), 'round_not_open', 'notifyAllPaid')
+            }
           />
-          <Button label={t('clearPaid')} tone="ghost" small onClick={() => setConfirmingClear(true)} />
+          <Button
+            label={t('clearPaid')}
+            tone="ghost"
+            small
+            onClick={() => setConfirmingClear(true)}
+          />
         </div>
       ) : null}
+
+      <span className="strong">{t('collectMoney')}</span>
+      <span className="muted">{t('monthCollectHint')}</span>
 
       {payments.map((payment) => {
         const member = bundle.members.find((item) => item.id === payment.memberId);
@@ -117,7 +133,9 @@ export function MonthPage() {
           >
             <div className="spread">
               <span className="strong">{member?.name}</span>
-              <span className={payment.paid ? 'amount' : 'muted'}>{payment.paid ? t('paid') : t('notPaid')}</span>
+              <span className={payment.paid ? 'amount' : 'muted'}>
+                {payment.paid ? t('paid') : t('notPaid')}
+              </span>
             </div>
             {already ? (
               <span className="gold">
@@ -127,25 +145,6 @@ export function MonthPage() {
           </Card>
         );
       })}
-
-      <span className="strong">{t('chooseRecipient')}</span>
-      <span className="rule-note">{t('noDoubleWin')}</span>
-      {eligible.map((member) => (
-        <Card
-          key={member.id}
-          onClick={
-            editable
-              ? () => run(() => store.setRecipient(keshtId, member.id), 'round_not_open', 'notifyRecipientSet')
-              : undefined
-          }
-        >
-          <span className={member.id === round.recipientMemberId ? 'amount' : 'strong'}>
-            {member.id === round.recipientMemberId ? '● ' : '○ '}
-            {member.name}
-            {member.id === nextId ? ` · ${t('suggested')}` : ''}
-          </span>
-        </Card>
-      ))}
 
       {editable && confirming ? (
         <ConfirmDialog
@@ -175,7 +174,11 @@ export function MonthPage() {
           cancelLabel={t('back')}
           onConfirm={() => {
             setConfirmingClear(false);
-            run(() => store.setAllPaid(keshtId, false), 'round_not_open', 'notifyPaymentsCleared');
+            run(
+              () => store.setAllPaid(keshtId, false),
+              'round_not_open',
+              'notifyPaymentsCleared',
+            );
           }}
           onCancel={() => setConfirmingClear(false)}
         />

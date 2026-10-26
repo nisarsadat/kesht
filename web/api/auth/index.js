@@ -98,6 +98,31 @@ function getProxyPath(req, url) {
   return null;
 }
 
+/** Vercel may already parse JSON bodies; prefer that over an empty stream. */
+async function readBody(req) {
+  if (Buffer.isBuffer(req.body)) return req.body;
+  if (typeof req.body === 'string' && req.body.length) {
+    return Buffer.from(req.body);
+  }
+  if (req.body && typeof req.body === 'object') {
+    return Buffer.from(JSON.stringify(req.body));
+  }
+
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return chunks.length ? Buffer.concat(chunks) : undefined;
+}
+
+const SKIP_RESPONSE_HEADERS = new Set([
+  'set-cookie',
+  'content-encoding',
+  'content-length',
+  'transfer-encoding',
+  'connection',
+]);
+
 export default async function handler(req, res) {
   const baseUrl = process.env.NEON_AUTH_BASE_URL;
   const cookieSecret = process.env.NEON_AUTH_COOKIE_SECRET;
@@ -127,6 +152,17 @@ export default async function handler(req, res) {
     const headers = new Headers();
 
     for (const [name, value] of Object.entries(req.headers)) {
+      // Node/undici rejects certain hop-by-hop headers on Request.
+      const lower = name.toLowerCase();
+      if (
+        lower === 'host' ||
+        lower === 'connection' ||
+        lower === 'content-length' ||
+        lower === 'transfer-encoding'
+      ) {
+        continue;
+      }
+
       if (Array.isArray(value)) {
         for (const item of value) headers.append(name, item);
       } else if (value !== undefined) {
@@ -135,28 +171,25 @@ export default async function handler(req, res) {
     }
 
     let body;
-
     if (!['GET', 'HEAD'].includes(req.method || 'GET')) {
-      const chunks = [];
-
-      for await (const chunk of req) {
-        chunks.push(Buffer.from(chunk));
-      }
-
-      if (chunks.length) {
-        body = Buffer.concat(chunks);
-      }
+      body = await readBody(req);
     }
 
-    // Keep the original client path so Origin/cookie logic stays correct.
     // Drop the rewrite-only `path` query param before proxying upstream.
     const upstreamSearch = new URLSearchParams(url.search);
     upstreamSearch.delete('path');
     upstreamSearch.delete('...path');
+
+    // Cookie-cache for get-session omits set-auth-jwt, so Data API gets an
+    // opaque session token and rejects it as "not a valid JWT encoding".
+    if (path === 'get-session' || path.startsWith('get-session?')) {
+      upstreamSearch.set('disableCookieCache', 'true');
+    }
+
     const search = upstreamSearch.toString();
     const requestUrl = new URL(
       path
-        ? `/api/auth/${path}${search ? `?${search}` : ''}`
+        ? `/api/auth/${path.split('?')[0]}${search ? `?${search}` : ''}`
         : `/api/auth${search ? `?${search}` : ''}`,
       `${proto}://${host}`,
     );
@@ -169,7 +202,7 @@ export default async function handler(req, res) {
 
     const response = await handleAuthProxyRequest({
       request,
-      path,
+      path: path.split('?')[0],
       baseUrl,
       cookieSecret,
       sameSite: 'lax',
@@ -178,20 +211,30 @@ export default async function handler(req, res) {
     res.statusCode = response.status;
 
     response.headers.forEach((value, name) => {
-      if (name.toLowerCase() !== 'set-cookie') {
+      if (!SKIP_RESPONSE_HEADERS.has(name.toLowerCase())) {
         res.setHeader(name, value);
       }
     });
 
     appendCookies(res, collectSetCookies(response));
 
+    // Forward JWT header used by the Neon client to talk to Data API.
+    const jwt = response.headers.get('set-auth-jwt');
+    if (jwt) res.setHeader('set-auth-jwt', jwt);
+    const authToken = response.headers.get('set-auth-token');
+    if (authToken) res.setHeader('set-auth-token', authToken);
+
     const responseBody = Buffer.from(await response.arrayBuffer());
+    if (!res.getHeader('content-type') && responseBody.length) {
+      res.setHeader('content-type', 'application/json; charset=utf-8');
+    }
     return res.end(responseBody);
   } catch (error) {
     console.error('[Auth Proxy] Request failed:', error);
 
     return res.status(500).json({
       error: 'Authentication proxy request failed.',
+      detail: error instanceof Error ? error.message : String(error),
     });
   }
 }

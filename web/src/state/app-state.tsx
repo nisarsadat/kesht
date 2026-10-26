@@ -151,6 +151,19 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+function toAppSession(session: {
+  user?: { id?: string; email?: string | null } | null;
+} | null): Session {
+  const id = session?.user?.id;
+  if (!id) return null;
+  return {
+    user: {
+      id,
+      email: session?.user?.email ?? null,
+    },
+  };
+}
+
 /** WebKit may not expose Set-Cookie to the next fetch immediately. */
 async function waitForSession(
   client: NonNullable<typeof neon>,
@@ -161,9 +174,13 @@ async function waitForSession(
     await sleep(delayMs);
 
     try {
-      const { data, error } = await client.auth.getSession();
+      // forceFetch avoids cookie-cache responses that omit set-auth-jwt.
+      const { data, error } = await client.auth.getSession({
+        forceFetch: true,
+      });
       if (error) continue;
-      if (data.session?.user) return data.session;
+      const next = toAppSession(data.session);
+      if (next) return next;
     } catch {
       // Keep retrying until delays are exhausted.
     }
@@ -186,6 +203,14 @@ export function AppStateProvider({
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const attached = useRef<string | null>(null);
+  // Same-tab SIGNED_IN broadcasts are ignored by the SDK; apply session ourselves.
+  const applySession = useRef((next: Session | null) => {
+    setSession(next);
+  });
+  applySession.current = (next) => {
+    setSession(next);
+    setAuthReady(true);
+  };
 
   const language = store.getLanguage();
   const theme = store.getTheme();
@@ -204,12 +229,14 @@ export function AppStateProvider({
 
     async function initializeSession() {
       try {
-        const { data, error } = await authClient.auth.getSession();
+        const { data, error } = await authClient.auth.getSession({
+          forceFetch: true,
+        });
 
         if (error) throw error;
         if (!active) return;
 
-        setSession(data.session ?? null);
+        setSession(toAppSession(data.session));
       } catch (caught) {
         console.error(
           '[Auth] Initial session retrieval failed:',
@@ -229,7 +256,7 @@ export function AppStateProvider({
       (_event, nextSession) => {
         if (!active) return;
 
-        setSession(nextSession ?? null);
+        setSession(toAppSession(nextSession));
         setAuthReady(true);
       },
     );
@@ -338,24 +365,33 @@ export function AppStateProvider({
               '[Auth] Session missing after sign-in; retrying getSession',
             );
             const recovered = await waitForSession(client);
-            if (recovered) return;
+            if (recovered) {
+              applySession.current(recovered);
+              return;
+            }
           }
 
           console.error('[Auth] Sign-in error:', result.error);
           throw new Error(result.error.message);
         }
 
-        if (!result.data?.session) {
-          const recovered = await waitForSession(client);
-          if (recovered) return;
-
-          throw new Error(
-            'Sign-in returned successfully, but no session was returned.',
-          );
+        const fromResult = toAppSession(result.data?.session ?? null);
+        if (fromResult) {
+          applySession.current(fromResult);
+          // Refresh JWT for Data API (cookie cache can omit set-auth-jwt).
+          void client.auth.getSession({ forceFetch: true });
+          return;
         }
 
-        // AppStateProvider listens for authentication state changes.
-        // Avoid making an immediate second getSession() request here.
+        const recovered = await waitForSession(client);
+        if (recovered) {
+          applySession.current(recovered);
+          return;
+        }
+
+        throw new Error(
+          'Sign-in returned successfully, but no session was returned.',
+        );
       },
 
       signUp: async (email: string, password: string) => {
@@ -382,18 +418,29 @@ export function AppStateProvider({
               '[Auth] Session missing after sign-up; retrying getSession',
             );
             const recovered = await waitForSession(client);
-            if (recovered) return { needsConfirmation: false };
+            if (recovered) {
+              applySession.current(recovered);
+              return { needsConfirmation: false };
+            }
           }
 
           throw new Error(error.message);
         }
 
-        if (data.session === null) {
-          const recovered = await waitForSession(client);
-          if (recovered) return { needsConfirmation: false };
+        const fromResult = toAppSession(data.session);
+        if (fromResult) {
+          applySession.current(fromResult);
+          void client.auth.getSession({ forceFetch: true });
+          return { needsConfirmation: false };
         }
 
-        return { needsConfirmation: data.session === null };
+        const recovered = await waitForSession(client);
+        if (recovered) {
+          applySession.current(recovered);
+          return { needsConfirmation: false };
+        }
+
+        return { needsConfirmation: true };
       },
 
       signOut: async () => {

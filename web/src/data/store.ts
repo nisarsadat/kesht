@@ -1,5 +1,6 @@
 import {
   addMember,
+  clearRecipient,
   closeRound,
   createId,
   createKesht,
@@ -460,6 +461,11 @@ export class KeshtStore {
   setRecipient(keshtId: string, memberId: string): void {
     const now = new Date().toISOString();
     this.mutate(keshtId, (bundle) => setRecipient(bundle, memberId, now));
+  }
+
+  clearRecipient(keshtId: string): void {
+    const now = new Date().toISOString();
+    this.mutate(keshtId, (bundle) => clearRecipient(bundle, now));
   }
 
   closeRound(keshtId: string): void {
