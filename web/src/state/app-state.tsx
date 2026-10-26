@@ -137,6 +137,41 @@ function messageOf(caught: unknown): string {
   return '';
 }
 
+function isSessionNotFoundMessage(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes('failed to retrieve user session') ||
+    text.includes('session not found')
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/** WebKit may not expose Set-Cookie to the next fetch immediately. */
+async function waitForSession(
+  client: NonNullable<typeof neon>,
+): Promise<Session | null> {
+  const delaysMs = [100, 200, 250];
+
+  for (const delayMs of delaysMs) {
+    await sleep(delayMs);
+
+    try {
+      const { data, error } = await client.auth.getSession();
+      if (error) continue;
+      if (data.session?.user) return data.session;
+    } catch {
+      // Keep retrying until delays are exhausted.
+    }
+  }
+
+  return null;
+}
+
 export function AppStateProvider({
   children,
 }: {
@@ -298,11 +333,22 @@ export function AppStateProvider({
         });
 
         if (result.error) {
+          if (isSessionNotFoundMessage(result.error.message)) {
+            console.warn(
+              '[Auth] Session missing after sign-in; retrying getSession',
+            );
+            const recovered = await waitForSession(client);
+            if (recovered) return;
+          }
+
           console.error('[Auth] Sign-in error:', result.error);
           throw new Error(result.error.message);
         }
 
         if (!result.data?.session) {
+          const recovered = await waitForSession(client);
+          if (recovered) return;
+
           throw new Error(
             'Sign-in returned successfully, but no session was returned.',
           );
@@ -330,7 +376,22 @@ export function AppStateProvider({
           },
         });
 
-        if (error) throw new Error(error.message);
+        if (error) {
+          if (isSessionNotFoundMessage(error.message)) {
+            console.warn(
+              '[Auth] Session missing after sign-up; retrying getSession',
+            );
+            const recovered = await waitForSession(client);
+            if (recovered) return { needsConfirmation: false };
+          }
+
+          throw new Error(error.message);
+        }
+
+        if (data.session === null) {
+          const recovered = await waitForSession(client);
+          if (recovered) return { needsConfirmation: false };
+        }
 
         return { needsConfirmation: data.session === null };
       },

@@ -57,22 +57,26 @@ Then point the app at the project:
 
 ```bash
 cd web
-cp .env.example .env.local     # paste the two URLs
+cp .env.example .env.local     # paste Data API URL + server auth vars
 npm install
 npm run dev                    # http://localhost:5173
 ```
 
-`VITE_NEON_AUTH_URL` and `VITE_NEON_DATA_API_URL` are baked in at build time, so they must
-be set wherever you build. Both are public endpoints — **row level security** and the
-signed-in user's JWT protect the data.
+Auth requests go through the same-origin `/api/auth` proxy (needed for Safari/iPhone). The
+browser only needs `VITE_NEON_DATA_API_URL` (baked in at build time). The proxy needs
+`NEON_AUTH_BASE_URL` and `NEON_AUTH_COOKIE_SECRET` at runtime. The Data API is protected by
+**row level security** and the signed-in user's JWT.
 
 ## Deploy to Vercel
 
 1. Push this repository to GitHub and import it in Vercel.
 2. On the project's settings, set **Root Directory** to `web`. Vercel detects Vite; the
    build command is `npm run build` and the output directory is `dist`.
-3. Under **Environment Variables**, add `VITE_NEON_AUTH_URL` and `VITE_NEON_DATA_API_URL`
-   for **Production**, **Preview** and **Development**.
+3. Under **Environment Variables**, add for **Production**, **Preview** and **Development**:
+   - `VITE_NEON_DATA_API_URL` — Neon Data API URL (client, build-time)
+   - `NEON_AUTH_BASE_URL` — Neon Auth base URL (server, for `/api/auth` proxy)
+   - `NEON_AUTH_COOKIE_SECRET` — random secret, at least 32 characters (server; e.g.
+     `openssl rand -base64 32`)
 4. In Neon's Auth settings, add your deployed URL to the allowed redirect/callback URLs.
 5. Set **Node.js Version** to 20 or newer (a `engines` field already asks for `>= 20`).
 
