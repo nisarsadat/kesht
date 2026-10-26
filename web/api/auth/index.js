@@ -224,6 +224,13 @@ export default async function handler(req, res) {
     const authToken = response.headers.get('set-auth-token');
     if (authToken) res.setHeader('set-auth-token', authToken);
 
+    // Expose custom auth headers to the browser (needed if anything treats
+    // the request as CORS; harmless for same-origin).
+    res.setHeader(
+      'Access-Control-Expose-Headers',
+      'set-auth-jwt, set-auth-token, Set-Auth-Jwt, Set-Auth-Token',
+    );
+
     const responseBody = Buffer.from(await response.arrayBuffer());
     if (!res.getHeader('content-type') && responseBody.length) {
       res.setHeader('content-type', 'application/json; charset=utf-8');

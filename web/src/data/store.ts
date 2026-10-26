@@ -285,6 +285,12 @@ export class KeshtStore {
     this.lastError = null;
     this.emit();
     try {
+      // Ensure Data API has a real JWT (set-auth-jwt) before any RPC/select.
+      const { error: sessionError } = await neon!.auth.getSession({
+        forceFetch: true,
+      });
+      if (sessionError) throw sessionError;
+
       const { error } = await neon!.rpc('claim_pending_invites');
       if (error) throw error;
       await this.loadAll();
@@ -309,6 +315,7 @@ export class KeshtStore {
     // (a signed-out visitor should not be querying the database at all).
     if (this.mode === 'local' || !this.userId) return;
     try {
+      await neon!.auth.getSession({ forceFetch: true });
       await this.loadAll();
     } catch (caught) {
       this.fail(reason(caught));

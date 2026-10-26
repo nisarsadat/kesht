@@ -128,6 +128,14 @@ function authMessageKey(message: string): MessageKey | null {
     return 'networkError';
   }
 
+  if (
+    text.includes('authentication required') ||
+    text.includes('valid token') ||
+    text.includes('not a valid jwt')
+  ) {
+    return 'notAuthenticated';
+  }
+
   return null;
 }
 
